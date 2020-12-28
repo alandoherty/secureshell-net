@@ -9,8 +9,9 @@ using System.IO.Pipelines;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using BattleCrate.Filesystem.Ssh.Protocol.Messages;
 
-namespace BattleCrate.Filesystem.Ssh
+namespace SecureShell
 {
     /// <summary>
     /// Represents a SSH2 peer and provides functionality to read/write packets. It handles the SSH Transport state, accepting services and processing data but does not deal with user authentication or other services.
@@ -24,12 +25,8 @@ namespace BattleCrate.Filesystem.Ssh
         private byte[] _headerBuffer = new byte[5];
         private SshIdentification _localIdentification;
         private SshIdentification _remoteIdentification;
-        private MacAlgorithim _macAlgorithim = MacAlgorithim.None;
-
-        /// <summary>
-        /// Gets the current integrity algorithim.
-        /// </summary>
-        public MacAlgorithim IntegrityAlgorithim => _macAlgorithim;
+        private MacAlgorithm _localMac = MacAlgorithm.None;
+        private MacAlgorithm _remoteMac = MacAlgorithm.None;
 
         /// <summary>
         /// Gets the local identification information.
@@ -47,15 +44,31 @@ namespace BattleCrate.Filesystem.Ssh
         public PeerMode Mode => _mode;
 
         #region Key Exchange
+
+        private void Read(in ReadOnlySequence<byte> seq)
+        {
+            SequenceReader<byte> reader = new SequenceReader<byte>(seq);
+            
+            // read header
+            reader.TryRead(out PacketHeader header);
+            reader.TryRead(out byte msgNum);
+
+            KeyInitializationMessage msg = default;
+            KeyInitializationMessage.Decoder decoder = default;
+            decoder.Decode(ref msg, ref reader);
+        }
+        
         /// <summary>
         /// Exchanges keys with the 
         /// </summary>
         /// <returns></returns>
         public async ValueTask ExchangeKeysAsync()
         {
-            PacketHeader? header = await ReadHeaderAsync();
-
-
+            while (true) {
+                ReadResult result = await _reader.ReadAsync();
+                
+                Read(result.Buffer);
+            }
         }
         #endregion
 

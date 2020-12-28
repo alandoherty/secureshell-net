@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace BattleCrate.Filesystem.Ssh
+namespace SecureShell
 {
     /// <summary>
     /// Represents SSH2 identification information that is exchanged.

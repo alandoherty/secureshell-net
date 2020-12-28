@@ -4,7 +4,7 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace BattleCrate.Filesystem.Ssh
+namespace SecureShell
 {
     /// <summary>
     /// Represents an incoming connection that must 

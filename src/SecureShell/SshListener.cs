@@ -6,15 +6,15 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace BattleCrate.Filesystem.Ssh
+namespace SecureShell
 {
     /// <summary>
     /// Accepts <see cref="SshConnection"/> peers.
     /// </summary>
     public class SshListener
     {
-        private Socket _socket;
-        private EndPoint _endpoint;
+        private readonly Socket _socket;
+        private readonly EndPoint _endpoint;
 
         /// <summary>
         /// Gets the local endpoint.

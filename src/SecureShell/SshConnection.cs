@@ -4,7 +4,7 @@ using System.IO.Pipelines;
 using System.Net;
 using System.Text;
 
-namespace BattleCrate.Filesystem.Ssh
+namespace SecureShell
 {
     /// <summary>
     /// Represents a SSH connection accepted via a <see cref="SshListener"/>.

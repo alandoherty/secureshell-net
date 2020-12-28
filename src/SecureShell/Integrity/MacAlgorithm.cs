@@ -2,31 +2,31 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace BattleCrate.Filesystem.Ssh.Integrity
+namespace SecureShell.Integrity
 {
     /// <summary>
     /// Represents integrity MAC algorithims and provides the built-ins.
     /// </summary>
-    public abstract class MacAlgorithim
+    public abstract class MacAlgorithm
     {
         /// <summary>
         /// The none algorithim.
         /// </summary>
-        public static NoneMacAlgorithim None = new NoneMacAlgorithim();
+        public static NoneMacAlgorithm None = new NoneMacAlgorithm();
 
         /// <summary>
         /// Try to create a a mac algorithim from name.
         /// </summary>
         /// <param name="name">The SSH name.</param>
-        /// <param name="algorithim">The output algorithim.</param>
+        /// <param name="algorithm">The output algorithim.</param>
         /// <returns>If the algorithim is supported.</returns>
-        public static bool TryCreateFromName(string name, out MacAlgorithim algorithim)
+        public static bool TryCreateFromName(string name, out MacAlgorithm algorithm)
         {
             if (name.Equals("none", StringComparison.OrdinalIgnoreCase)) {
-                algorithim = None; // no create neccessary
+                algorithm = None; // no create neccessary
                 return true;
             } else {
-                algorithim = null;
+                algorithm = null;
                 return false;
             }
         }
@@ -60,6 +60,6 @@ namespace BattleCrate.Filesystem.Ssh.Integrity
         /// Creates an instance to be used within a peer. If the algorithim is stateless this may return one instance for every peer.
         /// </summary>
         /// <returns>The algorithim instance.</returns>
-        public abstract MacAlgorithim Create();
+        public abstract MacAlgorithm Create();
     }
 }

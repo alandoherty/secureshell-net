@@ -2,12 +2,12 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace BattleCrate.Filesystem.Ssh.Integrity
+namespace SecureShell.Integrity
 {
     /// <summary>
     /// Represents the `none` algorithim, performs no integrity.
     /// </summary>
-    public sealed class NoneMacAlgorithim : MacAlgorithim
+    public sealed class NoneMacAlgorithm : MacAlgorithm
     {
         /// <summary>
         /// Gets the size, which is always zero.
@@ -20,7 +20,7 @@ namespace BattleCrate.Filesystem.Ssh.Integrity
         }
 
         /// <inheritdoc/>
-        public override MacAlgorithim Create()
+        public override MacAlgorithm Create()
         {
             return this;
         }
