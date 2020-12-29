@@ -25,26 +25,39 @@ namespace SecureShell.Protocol
         /// </summary>
         public byte PaddingLength;
 
-        public bool TryParse(ReadOnlySequence<byte> sequence)
-        {
-            // if too small return false
-            if (sequence.Length < 5)
-                return false;
-
-            // create a buffer, copy into then parse that buffer
-            Span<byte> buffer = stackalloc byte[5];
-            sequence.Slice(0, 5)
-                .CopyTo(buffer);
-
-            return TryParse(buffer);
-        }
-
+        /// <summary>
+        /// Try and parse a packet header from the provided buffer.
+        /// </summary>
+        /// <param name="buffer">The buffer.</param>
+        /// <remarks>This method will not validate the data, such as the minimum 4 byte padding length.</remarks>
+        /// <returns>If parsing was successful.</returns>
         public bool TryParse(ReadOnlySpan<byte> buffer)
         {
-           
+            if (buffer.Length < 5) {
+                return false;
+            }
+
+            // make a copy of the length we can modify
+            if (BitConverter.IsLittleEndian) {
+                Span<byte> lengthBytes = stackalloc byte[4];
+                buffer.Slice(0, 4).CopyTo(lengthBytes);
+                lengthBytes.Reverse();
+                Length = BitConverter.ToUInt32(lengthBytes);
+            } else {
+                Length = BitConverter.ToUInt32(buffer.Slice(0, 4));
+            }
+
+            PaddingLength = buffer[4];
+
             return true;
         }
 
+        /// <summary>
+        /// Try and write the provided header to the buffer.
+        /// </summary>
+        /// <param name="buffer">The buffer.</param>
+        /// <remarks>The buffer must be at least 5 bytes.</remarks>
+        /// <returns></returns>
         public bool TryWriteBytes(Span<byte> buffer)
         {
             if (buffer.Length < 5)

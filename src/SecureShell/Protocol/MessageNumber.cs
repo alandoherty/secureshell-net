@@ -43,6 +43,25 @@ namespace SecureShell.Protocol
         /// <summary>
         /// New keys to be used onward.
         /// </summary>
-        NewKeys = 21
+        NewKeys = 21,
+
+        UserAuthRequest = 50,
+        UserAuthFailure = 51,
+        UserAuthSuccess = 52,
+        UserAuthBanner = 53,
+        GlobalRequest = 80,
+        RequestSuccess = 81,
+        RequestFailure = 82,
+        ChannelOpen = 90,
+        ChannelOpenConfirmation = 91,
+        ChannelOpenFailure = 92,
+        ChannelWindowAdjust = 93,
+        ChannelData = 93,
+        ChannelExtendedData = 95,
+        ChannelEof = 96,
+        ChannelClose = 97,
+        ChannelRequest = 98,
+        ChannelSuccess = 99,
+        ChannelFailure = 100
     }
 }

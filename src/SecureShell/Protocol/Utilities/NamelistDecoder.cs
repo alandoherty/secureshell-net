@@ -8,15 +8,15 @@ namespace SecureShell.Protocol.Utilities
     /// <summary>
     /// A helper decoder for namelists.
     /// </summary>
-    internal struct NamelistDecoder
+    public struct NamelistDecoder
     {
-        private uint? _length;
-        private uint _processedLength;
+        private int? _length;
+        private int _processedLength;
 
         /// <summary>
         /// Gets the length.
         /// </summary>
-        public uint? Length => _length;
+        public uint? Length => (uint?)_length;
 
         /// <summary>
         /// Defines the result of a decode operation.
@@ -32,6 +32,11 @@ namespace SecureShell.Protocol.Utilities
             /// Needs more data to decode.
             /// </summary>
             NeedsData,
+
+            /// <summary>
+            /// The current name is bigger than 255 bytes.
+            /// </summary>
+            NameTooBig,
             
             /// <summary>
             /// Completes the decoding.
@@ -53,34 +58,56 @@ namespace SecureShell.Protocol.Utilities
                     return DecodeResult.NeedsData;
 
                 reader.TryReadBigEndian(out int nameListLength);
-                _length = (uint)nameListLength;
+                _length = nameListLength;
                 _processedLength = 0;
                 
                 return DecodeResult.Length;
             }
             
-            // create a new sequence reader limited to only the namelist data if we have more data
-            SequenceReader<byte> limitedReader;
+            // create a new sequence reader from the existing sequence this allows us to limit the sequence if we need to, and also gives us
+            // full control over advancing the original sequence reader
+            SequenceReader<byte> copyReader;
+            int remainingLength = (int)(_length.Value - _processedLength);
 
-            if (reader.Remaining > _length) {
-                limitedReader = new SequenceReader<byte>(reader.Sequence.Slice(0, (long)_length.Value - _processedLength));
+            if (remainingLength == 0) {
+                return DecodeResult.Complete;
+            }
+
+            if (reader.Remaining > remainingLength) {
+                copyReader = new SequenceReader<byte>(reader.Sequence.Slice(reader.Position, remainingLength));
             } else {
-                limitedReader = reader;
+                copyReader = new SequenceReader<byte>(reader.Sequence.Slice(reader.Position));
             }
             
             // keep advancing to a comma until there is nothing left
             //TODO: possibly a more efficient way of building the strings without creating an array
-            while (limitedReader.Remaining > 0) {
-                if (reader.TryReadTo(out ReadOnlySequence<byte> nameSequence, (byte) ',')) {
-                    names.Add(Encoding.ASCII.GetString(nameSequence.ToArray()));
-                } else {
-                    if (_processedLength + (uint)reader.Consumed == _length.Value) {
-                        byte[] remainingNameBytes = new byte[(int)reader.Remaining];
-                        reader.TryCopyTo()
-                        names.Add(Encoding.ASCII.GetString(remainingNameBytes));
-                        return DecodeResult.Complete
+            while (copyReader.Remaining > 0) {
+                if (copyReader.TryReadTo(out ReadOnlySequence<byte> nameSequence, (byte) ',')) {
+                    reader.Advance(nameSequence.Length + 1);
+                  
+                    if (nameSequence.IsSingleSegment) {
+                        names.Add(Encoding.ASCII.GetString(nameSequence.FirstSpan));
                     } else {
-                        _processedLength += (uint)reader.Consumed;
+                        names.Add(Encoding.ASCII.GetString(nameSequence.ToArray()));
+                    }
+
+                    // advance the amount of the total length that we've processed, we need to include the comma too
+                    _processedLength += (int)nameSequence.Length + 1;
+                    remainingLength = (int)(_length.Value - _processedLength); 
+                } else {
+                    if (remainingLength <= copyReader.Remaining) {
+                        byte[] remainingNameBytes = new byte[(int)copyReader.Remaining];
+                        copyReader.TryCopyTo(remainingNameBytes.AsSpan());
+                        reader.Advance(remainingNameBytes.Length);
+                        names.Add(Encoding.ASCII.GetString(remainingNameBytes));
+                        return DecodeResult.Complete;
+                    } else {
+                        // we limit the strings to 255 bytes maximum for each name, this is important as since we don't buffer
+                        // them we take directly from the sequence. this prevents copying but must be careful not to elapse
+                        // the buffer of our caller so we must give up eventually after not receiving a comma
+                        if (remainingLength > 256)
+                            return DecodeResult.NameTooBig;
+
                         return DecodeResult.NeedsData;
                     }
                 }

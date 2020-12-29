@@ -1,6 +1,4 @@
-﻿using BattleCrate.Filesystem.Ssh.Integrity;
-using BattleCrate.Filesystem.Ssh.Protocol;
-using System;
+﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -9,7 +7,9 @@ using System.IO.Pipelines;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using BattleCrate.Filesystem.Ssh.Protocol.Messages;
+using SecureShell.Integrity;
+using SecureShell.Protocol;
+using SecureShell.Protocol.Messages;
 
 namespace SecureShell
 {
@@ -51,11 +51,17 @@ namespace SecureShell
             
             // read header
             reader.TryRead(out PacketHeader header);
+
+            // read message num
             reader.TryRead(out byte msgNum);
 
-            KeyInitializationMessage msg = default;
-            KeyInitializationMessage.Decoder decoder = default;
-            decoder.Decode(ref msg, ref reader);
+            if (msgNum == (byte)MessageNumber.KeyInitialization) {
+                KeyInitializationMessage msg = default;
+                KeyInitializationMessage.Decoder decoder = default;
+                decoder.Decode(ref msg, ref reader);
+
+                Console.WriteLine(string.Join(',', msg.KeyExchangeAlgorithms));
+            }
         }
         
         /// <summary>
@@ -256,45 +262,6 @@ namespace SecureShell
             await _writer.FlushAsync();
         }
 
-        private async ValueTask<PacketHeader?> ReadHeaderAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            int bytesRead = 0;
-
-            // keep reading data until we receive all 5 header bytes
-            while (true) {
-                var result = await _reader.ReadAsync(cancellationToken);
-
-                // if completed the peer was disposed during a read and we have no more data we could potentially process
-                if (result.IsCompleted && result.Buffer.IsEmpty) {
-                    return null;
-                }
-
-                // we can cancel if no data has been read
-                if (result.IsCanceled && bytesRead == 0) {
-                    throw new OperationCanceledException("The peer read was cancelled", cancellationToken);
-                }
-
-                if (result.Buffer.Length >= 5) {
-                    PacketHeader header = default;
-                    ReadOnlySequence<byte> headerSequence = result.Buffer.Slice(0, 5);
-                    header.TryParse(headerSequence);
-
-                    _reader.AdvanceTo(headerSequence.End, headerSequence.End);
-                    return header;
-                } else {
-                    // nothing consumed but we examined a few bytes
-                    _reader.AdvanceTo(result.Buffer.Start, result.Buffer.End);
-                }
-
-                // if completed the peer was disposed during a read and we've processed all available data
-                if (result.IsCompleted) {
-                    return null;
-                }
-            }
-        }
-
         /// <summary>
         /// Writes a header to the peer.
         /// </summary>
@@ -310,12 +277,6 @@ namespace SecureShell
 
             _writer.Advance(5);
             await _writer.FlushAsync();
-        }
-
-        private async ValueTask WriteMessageAsync<TMessage>(TMessage message)
-            where TMessage : IPacketMessage<TMessage>
-        {
-
         }
 
         private async ValueTask CloseAsync(Exception exception = null)

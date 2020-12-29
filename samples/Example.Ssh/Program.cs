@@ -1,4 +1,4 @@
-﻿using BattleCrate.Filesystem.Ssh;
+﻿using SecureShell;
 using System;
 using System.Net;
 using System.Threading.Tasks;

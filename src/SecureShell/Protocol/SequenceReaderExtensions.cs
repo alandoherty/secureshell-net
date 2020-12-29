@@ -2,6 +2,9 @@ using System.Buffers;
 
 namespace SecureShell.Protocol
 {
+    /// <summary>
+    /// Implements extensions to <see cref="SequenceReader{T}"/> for the SSH protocol.
+    /// </summary>
     public static class SequenceReaderExtensions
     {
         /// <summary>
@@ -13,14 +16,24 @@ namespace SecureShell.Protocol
         public static bool TryRead(this ref SequenceReader<byte> reader, out PacketHeader header)
         {
             // check if enough bytes exist
-            if (reader.Length < 5) {
+            if (reader.Remaining < 5) {
                 header = default;
                 return false;
             }
 
-            reader.TryReadBigEndian(out int length);
-            reader.TryRead(out byte paddingLength);
+            // read the 32-bit length as network byte order
+            if (!reader.TryReadBigEndian(out int length)) {
+                header = default;
+                return false;
+            }
 
+            // read the padding length, must always be 4 but we don't validate here
+            if (!reader.TryRead(out byte paddingLength)) {
+                header = default;
+                return false;
+            }
+
+            // set data, we're all good
             header = default;
             header.PaddingLength = paddingLength;
             header.Length = (uint)length;
