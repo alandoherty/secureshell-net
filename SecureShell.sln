@@ -13,6 +13,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{CA39C2DB
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests.Protocol", "tests\Tests.Protocol\Tests.Protocol.csproj", "{C2C14DB1-91F7-428B-9D93-2CFFE9B68C9B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Example.SshProxy", "samples\Example.SshProxy\Example.SshProxy.csproj", "{948004CA-686C-473B-BB60-06A1E5E9ADD5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -31,6 +33,10 @@ Global
 		{C2C14DB1-91F7-428B-9D93-2CFFE9B68C9B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C2C14DB1-91F7-428B-9D93-2CFFE9B68C9B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C2C14DB1-91F7-428B-9D93-2CFFE9B68C9B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{948004CA-686C-473B-BB60-06A1E5E9ADD5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{948004CA-686C-473B-BB60-06A1E5E9ADD5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{948004CA-686C-473B-BB60-06A1E5E9ADD5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{948004CA-686C-473B-BB60-06A1E5E9ADD5}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -38,6 +44,7 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{64BF8C8D-60FE-4A7F-A404-DA031FD672AE} = {E514FAEF-DFCF-4187-AC85-BC587338EFD5}
 		{C2C14DB1-91F7-428B-9D93-2CFFE9B68C9B} = {CA39C2DB-431A-48C9-B1E7-2FF44092B00D}
+		{948004CA-686C-473B-BB60-06A1E5E9ADD5} = {E514FAEF-DFCF-4187-AC85-BC587338EFD5}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {6C21AA2D-B578-428C-9D27-490AE541E026}
