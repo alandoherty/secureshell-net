@@ -62,6 +62,12 @@ namespace SecureShell
 
                 Console.WriteLine(string.Join(',', msg.KeyExchangeAlgorithms));
             }
+            
+            // advance past padding
+            reader.Advance(header.PaddingLength);
+
+            // read header
+            bool a = reader.TryRead(out header);
         }
         
         /// <summary>
@@ -170,7 +176,7 @@ namespace SecureShell
         private bool TryReadIdentification(ReadOnlySequence<byte> sequence, SequencePosition lrPos, ref SshIdentification identification)
         {
             // get the full sequence for identification line
-            ReadOnlySequence<byte> identificationSeq = sequence.Slice(0, sequence.GetPosition(1, lrPos));
+            ReadOnlySequence<byte> identificationSeq = sequence.Slice(sequence.Start, lrPos);
 
             if (identificationSeq.Length > 255) {
                 throw new InvalidDataException("The peer sent an oversized identification line");

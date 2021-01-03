@@ -1,6 +1,7 @@
 namespace SecureShell.Compression
 {
-    public class NoneCompressionAlgorithm
+    //todo
+    class NoneCompressionAlgorithm
     {
         
     }
