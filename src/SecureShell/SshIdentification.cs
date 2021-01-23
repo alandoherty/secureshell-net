@@ -12,7 +12,7 @@ namespace SecureShell
         /// <summary>
         /// The default identification for this library in client/server mode.
         /// </summary>
-        public static readonly SshIdentification Default = new SshIdentification("BCSSH-0.1.0");
+        public static readonly SshIdentification Default = new SshIdentification("SFSSH-0.1.0");
 
         /// <summary>
         /// The software version, cannot contain spaces.

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipelines;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,6 +28,7 @@ namespace SecureShell
         private SshIdentification _remoteIdentification;
         private MacAlgorithm _localMac = MacAlgorithm.None;
         private MacAlgorithm _remoteMac = MacAlgorithm.None;
+        private SshOptions _options = SshOptions.Default;
 
         /// <summary>
         /// Gets the local identification information.
@@ -45,29 +47,29 @@ namespace SecureShell
 
         #region Key Exchange
 
-        private void Read(in ReadOnlySequence<byte> seq)
+        private (bool Completed, SequencePosition Consumed) Read(in ReadOnlySequence<byte> seq, ref KeyInitializationMessage msg, ref KeyInitializationMessage.Decoder msgDecoder)
         {
             SequenceReader<byte> reader = new SequenceReader<byte>(seq);
             
             // read header
-            reader.TryRead(out PacketHeader header);
+            if (!reader.TryRead(out PacketHeader header))
+                return (false, default);
 
             // read message num
-            reader.TryRead(out byte msgNum);
+            if (!reader.TryRead(out byte msgNum))
+                return (false, default);
 
             if (msgNum == (byte)MessageNumber.KeyInitialization) {
-                KeyInitializationMessage msg = default;
-                KeyInitializationMessage.Decoder decoder = default;
-                decoder.Decode(ref msg, ref reader);
+                if (msgDecoder.Decode(ref msg, ref reader)) {
+                    return (false, default);
+                }
 
                 Console.WriteLine(string.Join(',', msg.KeyExchangeAlgorithms));
             }
             
             // advance past padding
             reader.Advance(header.PaddingLength);
-
-            // read header
-            bool a = reader.TryRead(out header);
+            return (true, reader.Position);
         }
         
         /// <summary>
@@ -76,10 +78,29 @@ namespace SecureShell
         /// <returns></returns>
         public async ValueTask ExchangeKeysAsync()
         {
+            KeyInitializationMessage keyInitMsg = default;
+            KeyInitializationMessage.Decoder keyInitDecoder = default;
+            
             while (true) {
-                ReadResult result = await _reader.ReadAsync();
+                // if closing/closed we are completing/completed
+                if (_state == PeerState.Closing || _state == PeerState.Closed)
+                    throw new NotImplementedException(); //TODO
+
+                ReadResult result = await _reader.ReadAsync().ConfigureAwait(false);
                 
-                Read(result.Buffer);
+                var decodeResult = Read(result.Buffer, ref keyInitMsg, ref keyInitDecoder);
+                
+                if (decodeResult.Completed) {
+                    Console.WriteLine($"Completed Pos: {decodeResult.Consumed.GetInteger()}");
+                    _reader.AdvanceTo(decodeResult.Consumed);
+                } else {
+                    Console.WriteLine($"Examimed Pos: {result.Buffer.End.GetInteger()}");
+                    _reader.AdvanceTo(result.Buffer.Start, result.Buffer.End);
+                }
+                
+                // if completed we need to bubble up after processing
+                if (result.IsCompleted)
+                    throw new NotImplementedException(); //TODO
             }
         }
         #endregion
@@ -89,6 +110,7 @@ namespace SecureShell
         /// Exchanges the version by writing and reading the identification string.
         /// </summary>
         /// <param name="localIdentification">The local version.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>The remote SSH identification data.</returns>
         public async ValueTask<SshIdentification> ExchangeIdentificationAsync(SshIdentification localIdentification)
         {
@@ -96,20 +118,43 @@ namespace SecureShell
             if (_state != PeerState.IdentificationExchange) {
                 throw new InvalidOperationException("The peer must be in the version exchange state");
             }
-
+            
+            // create the timeout cancellation source that will dispose the peer
+            CancellationTokenRegistration timeoutRegistration = default;
+            
+            if (_options.IdentificationExchangeTimeout != null) {
+                CancellationTokenSource timeoutTokenSource =
+                    new CancellationTokenSource(_options.IdentificationExchangeTimeout.Value);
+                timeoutTokenSource.Token.Register((o) => {
+                    ((SshPeer) o).Dispose(new TimeoutException("Timeout while exchanging identification lines"));
+                }, this);
+            }
+            
             // write identification
             _localIdentification = localIdentification;
-            await WriteIdentificationAsync(localIdentification);
+            await WriteIdentificationAsync(localIdentification).ConfigureAwait(false);
 
             // read the identification
-            _remoteIdentification = await ReadIdentificationAsync();
+            SshIdentification? remoteIdentification = await ReadIdentificationAsync().ConfigureAwait(false);
 
-            if (_remoteIdentification.ProtocolVersion != "2.0") {
-                NotSupportedException exception = new NotSupportedException("The opposing protocol version is unsupported");
-                await CloseAsync(exception);
+            if (remoteIdentification == null) {
+                Exception exception = new Exception("The peer was closed while exchanging identification");
+                Dispose(exception);
                 throw exception;
             }
-
+            
+            await timeoutRegistration.DisposeAsync();
+            //TODO: there is probably a race condition here
+            
+            // if the identification was read lets validate it before continuing
+            _remoteIdentification = remoteIdentification.Value;
+            
+            if (_remoteIdentification.ProtocolVersion != "2.0") {
+                NotSupportedException exception = new NotSupportedException("The opposing protocol version is unsupported");
+                Dispose(exception);
+                throw exception;
+            }
+            
             return _remoteIdentification;
         }
 
@@ -117,6 +162,7 @@ namespace SecureShell
         {
             // validate: we need both '\r' and '\n' to be considered valid
             if (identificationBuffer[identificationBuffer.Length - 2] != '\r') {
+                Debug.Fail("The identification line is not CRLF");
                 return false;
             }
 
@@ -176,7 +222,7 @@ namespace SecureShell
         private bool TryReadIdentification(ReadOnlySequence<byte> sequence, SequencePosition lrPos, ref SshIdentification identification)
         {
             // get the full sequence for identification line
-            ReadOnlySequence<byte> identificationSeq = sequence.Slice(sequence.Start, lrPos);
+            ReadOnlySequence<byte> identificationSeq = sequence.Slice(sequence.Start, sequence.GetPosition(0, lrPos));
 
             if (identificationSeq.Length > 255) {
                 throw new InvalidDataException("The peer sent an oversized identification line");
@@ -193,34 +239,45 @@ namespace SecureShell
             }
         }
 
-        private async ValueTask<SshIdentification> ReadIdentificationAsync()
+        private async ValueTask<SshIdentification?> ReadIdentificationAsync()
         {
             // keep reading data until we receive CRLF unless 255 bytes of data arrives first
             while (true) {
+                // if closing/closed we are completing/completed
+                if (_state == PeerState.Closing || _state == PeerState.Closed)
+                    return null;
+                
                 var result = await _reader.ReadAsync();
-
+                
                 // look for carriage return
                 var lrPos = result.Buffer.PositionOf((byte)'\n');
 
                 if (lrPos.HasValue) {
-                    _reader.AdvanceTo(result.Buffer.GetPosition(1, lrPos.Value));
-
                     SshIdentification identification = default;
 
-                    if (TryReadIdentification(result.Buffer, lrPos.Value, ref identification)) {
-                        return identification;
-                    } else {
-                        // the RFC allows CRLF lines of UTF-8 to be sent up to 255 bytes prior to the identification line
-                        // this must be one of them, so process and move
+                    try {
+                        if (TryReadIdentification(result.Buffer, result.Buffer.GetPosition(1, lrPos.Value), ref identification)) {
+                            return identification;
+                        } else {
+                            // the RFC allows CRLF lines of UTF-8 to be sent up to 255 bytes prior to the identification line
+                            // this must be one of them, so process and move
+                        }
+                    } finally {
+                        _reader.AdvanceTo(result.Buffer.GetPosition(1, lrPos.Value));
                     }
                 } else {
                     // no '\n' found in any of the buffer
                     _reader.AdvanceTo(result.Buffer.Start, result.Buffer.End);
                 }
-
+                
+                // if completed then we need to bubble up
+                if (result.IsCompleted) {
+                    return null;
+                }
+                
                 // if we didn't find the identification and we've reached 255 bytes we've reached the RFC limit
                 if (result.Buffer.Length >= 255) {
-                    throw new InvalidDataException("The peer sent an invalid or corrupt identification line");
+                    return null;
                 }
             }
         }
@@ -285,11 +342,23 @@ namespace SecureShell
             await _writer.FlushAsync();
         }
 
-        private async ValueTask CloseAsync(Exception exception = null)
+        private async ValueTask DisconnectAsync(Exception exception = null)
         {
+            // gracefully close the peer
+            //TODO: if connected send disconnect message
+            
             _state = PeerState.Closed;
-            await _reader.CompleteAsync(exception);
-            await _writer.CompleteAsync(exception);
+            await _reader.CompleteAsync(exception).ConfigureAwait(false);
+            await _writer.CompleteAsync(exception).ConfigureAwait(false);
+            _state = PeerState.Closed;
+        }
+
+        private void Dispose(Exception exception = null)
+        {
+            // terminate the peer
+            _reader.Complete(exception);
+            _writer.Complete(exception);
+            _state = PeerState.Closed;
         }
 
         internal SshPeer(PeerMode mode, PipeReader pipeReader, PipeWriter pipeWriter)

@@ -9,7 +9,14 @@ namespace Example.Ssh
     {
         static async Task AcceptAsync(SshConnectionContext ctx)
         {
-            var conn = await ctx.GetConnectionAsync(new Progress<PeerState>(p => Console.WriteLine(p)));
+            SshConnection connection;
+
+            try {
+                connection = await ctx.GetConnectionAsync(
+                        new Progress<PeerState>(p => Console.WriteLine($"ConnectProgress: {p}")));
+            } catch (Exception ex) {
+                
+            }
         }
 
         static async Task Main(string[] args)

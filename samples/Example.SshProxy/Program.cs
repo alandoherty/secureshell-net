@@ -23,7 +23,7 @@ namespace Example.SshProxy
                     NetworkStream stream1 = client1.GetStream();
                     NetworkStream stream2 = client2.GetStream();
 
-                    await Task.WhenAny(CopyStreamInChunkAsync(8, stream1, stream2), CopyStreamInChunkAsync(8, stream2, stream1));
+                    await Task.WhenAny(CopyStreamInChunkAsync(4, stream1, stream2), CopyStreamInChunkAsync(8, stream2, stream1));
                 } catch (Exception ex) {
                     Console.WriteLine(ex.Message);
                 } finally {
