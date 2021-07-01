@@ -1,6 +1,6 @@
 using System.Buffers;
 
-namespace SecureShell.Protocol
+namespace SecureShell.Transport
 {
     /// <summary>
     /// Implements extensions to <see cref="SequenceReader{T}"/> for the SSH protocol.

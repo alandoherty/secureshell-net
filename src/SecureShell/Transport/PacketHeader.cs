@@ -3,7 +3,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Text;
 
-namespace SecureShell.Protocol
+namespace SecureShell.Transport
 {
     /// <summary>
     /// Represents a packet header structure.
@@ -33,7 +33,7 @@ namespace SecureShell.Protocol
         /// <returns>If parsing was successful.</returns>
         public bool TryParse(ReadOnlySpan<byte> buffer)
         {
-            if (buffer.Length < 5) {
+            if (buffer.Length < Size) {
                 return false;
             }
 
@@ -60,7 +60,7 @@ namespace SecureShell.Protocol
         /// <returns></returns>
         public bool TryWriteBytes(Span<byte> buffer)
         {
-            if (buffer.Length < 5)
+            if (buffer.Length < Size)
                 return false;
 
             // write message length
@@ -73,6 +73,22 @@ namespace SecureShell.Protocol
             // write padding length
             buffer[4] = PaddingLength;
 
+            return true;
+        }
+
+        /// <summary>
+        /// Try and write the header to a buffer writer.
+        /// </summary>
+        /// <param name="writer">The writer.</param>
+        /// <returns>If the header was written successfully.</returns>
+        public bool TryWrite(IBufferWriter<byte> writer)
+        {
+            Span<byte> headerBytes = writer.GetSpan(Size);
+
+            if (!TryWriteBytes(headerBytes))
+                return false;
+
+            writer.Advance(Size);
             return true;
         }
     }

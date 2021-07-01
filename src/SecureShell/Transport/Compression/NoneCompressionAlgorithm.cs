@@ -1,4 +1,4 @@
-namespace SecureShell.Compression
+namespace SecureShell.Transport.Compression
 {
     //todo
     class NoneCompressionAlgorithm

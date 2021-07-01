@@ -8,9 +8,10 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using SecureShell.Integrity;
-using SecureShell.Protocol;
-using SecureShell.Protocol.Messages;
+using SecureShell.Transport.Integrity;
+using SecureShell.Transport;
+using SecureShell.Transport.Messages;
+using SecureShell.Transport.KeyExchange;
 
 namespace SecureShell
 {
@@ -29,6 +30,9 @@ namespace SecureShell
         private MacAlgorithm _localMac = MacAlgorithm.None;
         private MacAlgorithm _remoteMac = MacAlgorithm.None;
         private SshOptions _options = SshOptions.Default;
+        private KeyInitializationMessage _keyInit = default;
+
+        private Random _insecureRandom = new Random();
 
         /// <summary>
         /// Gets the local identification information.
@@ -46,31 +50,6 @@ namespace SecureShell
         public PeerMode Mode => _mode;
 
         #region Key Exchange
-
-        private (bool Completed, SequencePosition Consumed) Read(in ReadOnlySequence<byte> seq, ref KeyInitializationMessage msg, ref KeyInitializationMessage.Decoder msgDecoder)
-        {
-            SequenceReader<byte> reader = new SequenceReader<byte>(seq);
-            
-            // read header
-            if (!reader.TryRead(out PacketHeader header))
-                return (false, default);
-
-            // read message num
-            if (!reader.TryRead(out byte msgNum))
-                return (false, default);
-
-            if (msgNum == (byte)MessageNumber.KeyInitialization) {
-                if (msgDecoder.Decode(ref msg, ref reader)) {
-                    return (false, default);
-                }
-
-                Console.WriteLine(string.Join(',', msg.KeyExchangeAlgorithms));
-            }
-            
-            // advance past padding
-            reader.Advance(header.PaddingLength);
-            return (true, reader.Position);
-        }
         
         /// <summary>
         /// Exchanges keys with the 
@@ -78,30 +57,61 @@ namespace SecureShell
         /// <returns></returns>
         public async ValueTask ExchangeKeysAsync()
         {
-            KeyInitializationMessage keyInitMsg = default;
-            KeyInitializationMessage.Decoder keyInitDecoder = default;
-            
-            while (true) {
-                // if closing/closed we are completing/completed
-                if (_state == PeerState.Closing || _state == PeerState.Closed)
-                    throw new NotImplementedException(); //TODO
+            // encode and flush our message
+            KeyInitializationMessage outKeyInitMsg = default;
+            outKeyInitMsg.Cookie1 = 0;
+            outKeyInitMsg.Cookie2 = 0;
+            outKeyInitMsg.KeyExchangeAlgorithms = new List<string>() { "diffie-hellman-group14-sha1" };
+            outKeyInitMsg.ServerHostKeyAlgorithms = new List<string>() { "ssh-rsa" };
+            outKeyInitMsg.EncryptionAlgorithmsClientToServer = new List<string>() { "aes128-ctr" };
+            outKeyInitMsg.EncryptionAlgorithmsServerToClient = new List<string>() { "aes128-ctr" };
+            outKeyInitMsg.MacAlgorithmsClientToServer = new List<string>() { "hmac-sha1" };
+            outKeyInitMsg.MacAlgorithmsServerToClient = new List<string>() { "hmac-sha1" };
+            outKeyInitMsg.CompressionAlgorithmsClientToServer = new List<string>() { "none" };
+            outKeyInitMsg.CompressionAlgorithmsServerToClient = new List<string>() { "none" };
+            outKeyInitMsg.LanguagesClientToServer = new List<string>();
+            outKeyInitMsg.LanguagesServerToClient = new List<string>();
 
-                ReadResult result = await _reader.ReadAsync().ConfigureAwait(false);
-                
-                var decodeResult = Read(result.Buffer, ref keyInitMsg, ref keyInitDecoder);
-                
-                if (decodeResult.Completed) {
-                    Console.WriteLine($"Completed Pos: {decodeResult.Consumed.GetInteger()}");
-                    _reader.AdvanceTo(decodeResult.Consumed);
-                } else {
-                    Console.WriteLine($"Examimed Pos: {result.Buffer.End.GetInteger()}");
-                    _reader.AdvanceTo(result.Buffer.Start, result.Buffer.End);
+            await WritePacketAsync<KeyInitializationMessage, KeyInitializationMessage.Encoder>(MessageNumber.KeyInitialization, outKeyInitMsg)
+                .ConfigureAwait(false);
+
+            ExchangeAlgorithm exchangeAlgo = null;
+
+            while (true) {
+                var packet = await ReadPacketAsync(); //NOTE: probably cannot be configureawait?
+
+                if (!packet.TryGetMessageNumber(out MessageNumber num)) {
+                    throw new Exception("The peer sent an invalid message");
                 }
-                
-                // if completed we need to bubble up after processing
-                if (result.IsCompleted)
-                    throw new NotImplementedException(); //TODO
+
+                // process key initialization
+                if (num == MessageNumber.KeyInitialization) {
+                    if (exchangeAlgo != null) {
+                        throw new InvalidOperationException("The peer sent another key initialization");
+                    }
+
+                    if (!packet.TryDecode< KeyInitializationMessage, KeyInitializationMessage.Decoder>(out KeyInitializationMessage keyInitMsg)) {
+                        throw new InvalidDataException("The peer sent an invalid key initialization packet");
+                    }
+
+                    packet.Advance();
+
+                    exchangeAlgo = new DiffieHellmanGroupExchangeAlgorithm();
+                    continue;
+                }
+
+                // process exchange packets
+                if ((byte)num >= 30 || (byte)num <= 49) {
+                    if (exchangeAlgo == null) {
+                        throw new InvalidOperationException("The peer sent an exchange packet before key initialization");
+                    }
+
+                    await exchangeAlgo.ProcessExchangeAsync(packet).ConfigureAwait(false);
+
+                    continue;
+                }
             }
+
         }
         #endregion
 
@@ -298,12 +308,6 @@ namespace SecureShell
             // get a buffer to store into
             Memory<byte> buffer = _writer.GetMemory(255);
 
-            if (buffer.Length < 255) {
-                // if we got a buffer which was too small we need to do a less efficient process
-                //TODO: this can be fixed with a less efficient implementation later
-                throw new NotSupportedException("The identification buffer is too small");
-            }
-
             // write the initial part always (8 bytes)
             int offset = 8;
             Encoding.ASCII.GetBytes("SSH-2.0-", buffer.Span.Slice(0, 8));
@@ -326,20 +330,190 @@ namespace SecureShell
         }
 
         /// <summary>
-        /// Writes a header to the peer.
+        /// Reads a packet from the peer, handles encryption and integrity.
         /// </summary>
-        /// <param name="header">The packet header.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>The packet, SHOULD be advanced before reading next packet.</returns>
+        public async ValueTask<IncomingPacket> ReadPacketAsync(CancellationToken cancellationToken = default)
+        {
+            static (bool Done, IncomingPacket Packet, SequencePosition Examined) Process(SshPeer peer, ReadOnlySequence<byte> buffer)
+            {
+                //TODO: handle encryption
+                SequenceReader<byte> reader = new SequenceReader<byte>(buffer);
+
+                if (!reader.TryRead(out PacketHeader header))
+                    return (false, default, reader.Position);
+
+                if (header.Length + 4 > peer._options.MaximumPacketSize)
+                    throw new InvalidDataException("The peer attempted to send a packet which is too big");
+
+                // make sure we have the whole message + padding
+                // the header length includes the padding length which we just read
+                if (reader.Remaining < header.Length - 1) {
+                    reader.Advance(Math.Min(reader.Remaining, header.Length));
+                    return (false, default, reader.Position);
+                }
+
+                reader.Advance(Math.Min(reader.Remaining, header.Length));
+
+                //TODO: handle integrity MAC here
+
+                int messageLength = (int)(header.Length - 1 /* padding length */ - header.PaddingLength);
+                return (true, new IncomingPacket(header, buffer.Slice(PacketHeader.Size, messageLength), peer, reader.Position), reader.Position);
+            }
+
+            while (true) {
+                // if closing/closed we are completing/completed
+                if (_state == PeerState.Closing || _state == PeerState.Closed)
+                    throw new NotImplementedException(); //TODO
+
+                ReadResult readResult = await _reader.ReadAsync().ConfigureAwait(false);
+                var processResult = Process(this, readResult.Buffer);
+
+                if (processResult.Done) {
+                    // we do not need to advance here as IncomingPacket.Advance does it for us
+                    return processResult.Packet;
+                }
+
+                _reader.AdvanceTo(readResult.Buffer.Start, processResult.Examined);
+
+                // if completed we need to bubble up after processing
+                if (readResult.IsCompleted)
+                    throw new NotImplementedException(); //TODO
+            }
+        }
+
+        internal void AdvanceTo(SequencePosition position)
+        {
+            _reader.AdvanceTo(position);
+        }
+
+        /// <summary>
+        /// Reads and discards the specified amount of bytes.
+        /// </summary>
+        /// <param name="count">The count.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns></returns>
-        private async ValueTask WriteHeaderAsync(PacketHeader header, CancellationToken cancellationToken =default)
+        public async ValueTask AdvanceAsync(int count, CancellationToken cancellationToken = default)
         {
-            Memory<byte> memory = _writer.GetMemory(5);
+            int remainingCount = count;
 
-            if (!header.TryWriteBytes(memory.Span))
+            while (true) {
+                // if closing/closed we are completing/completed
+                if (_state == PeerState.Closing || _state == PeerState.Closed)
+                    throw new NotImplementedException(); //TODO
+
+                ReadResult readResult = await _reader.ReadAsync().ConfigureAwait(false);
+
+                // try and "consume" the bytes
+                int currentConsume = Math.Min((int)readResult.Buffer.Length, remainingCount);
+
+                if (currentConsume > 0) {
+                    _reader.AdvanceTo(readResult.Buffer.GetPosition(currentConsume, readResult.Buffer.Start));
+                    remainingCount -= currentConsume;
+                }
+
+                if (remainingCount == 0)
+                    break;
+
+                // if completed we need to bubble up after processing
+                if (readResult.IsCompleted)
+                    throw new NotImplementedException(); //TODO
+            }
+        }
+
+        /// <summary>
+        /// Writes a header to the peer, does not flush the writer.
+        /// </summary>
+        /// <param name="header">The packet header.</param>
+        /// <returns></returns>
+        private void WriteHeader(PacketHeader header)
+        {
+            Span<byte> bytes = _writer.GetSpan(PacketHeader.Size);
+
+            if (!header.TryWriteBytes(bytes))
                 throw new Exception("Failed to write header to buffer");
 
             _writer.Advance(5);
-            await _writer.FlushAsync();
+        }
+
+        /// <summary>
+        /// Writes a packet to the peer without specifying a encoder type, this will result in additional allocations.
+        /// </summary>
+        /// <typeparam name="TMessage">The message.</typeparam>
+        /// <param name="num">The message number.</param>
+        /// <param name="message">The message.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns></returns>
+        public ValueTask WritePacketAsync<TMessage>(MessageNumber num, TMessage message, CancellationToken cancellationToken = default)
+            where TMessage: IPacketMessage<TMessage>
+        {
+            return WritePacketAsync(num, message, message.CreateEncoder(), cancellationToken);
+        }
+
+        /// <summary>
+        /// Writes a packet to the peer.
+        /// </summary>
+        /// <typeparam name="TMessage">The message.</typeparam>
+        /// <typeparam name="TMessageEncoder">The encoder.</typeparam>
+        /// <param name="num">The message number.</param>
+        /// <param name="message">The message.</param>
+        /// <param name="encoder">The encoder.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns></returns>
+        public async ValueTask WritePacketAsync<TMessage, TMessageEncoder>(MessageNumber num, TMessage message, TMessageEncoder encoder = default, CancellationToken cancellationToken = default)
+            where TMessage : IPacketMessage<TMessage>
+            where TMessageEncoder : IMessageEncoder<TMessage>
+        {
+            static void WriteHeaderAndMessageNumber(IBufferWriter<byte> writer, PacketHeader header, MessageNumber num)
+            {
+                Span<byte> bytes = writer.GetSpan(PacketHeader.Size + 1);
+                header.TryWriteBytes(bytes.Slice(0, 5));
+                bytes[5] = (byte)num;
+                writer.Advance(PacketHeader.Size + 1);
+            }
+            
+            static void WritePadding(IBufferWriter<byte> writer, Random random, int count)
+            {
+                Debug.Assert(count <= 255);
+
+                Span<byte> paddingBytes = writer.GetSpan(count);
+                random.NextBytes(paddingBytes.Slice(0, count));
+                writer.Advance(count);
+            }
+
+            // calculate lengths
+            uint messageLength = message.GetByteCount() + 1; // message length also includes our prepended message number
+            uint paddingLength = (byte)(8 - ((messageLength + 1 + 4) % 8)); // padding is entire packet in block of 8
+
+            //TODO: the packet length must be at least 16 bytes
+            //TODO: this is a dirty hack for small padding
+            if (paddingLength < 4) {
+                paddingLength += 8;
+            }
+
+            uint packetLength = messageLength + 1 + paddingLength; // packet length doesn't include itself or mac
+
+            PacketHeader header = new PacketHeader() {
+                Length = packetLength,
+                PaddingLength = (byte)paddingLength
+            };
+
+            WriteHeaderAndMessageNumber(_writer, header, num);
+
+            // encode message
+            bool moreData = false;
+
+            do {
+                if (moreData) {
+                    await _writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                moreData = !encoder.Encode(message, _writer);
+            } while (moreData);
+
+            WritePadding(_writer, _insecureRandom, header.PaddingLength);
+            await _writer.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
 
         private async ValueTask DisconnectAsync(Exception exception = null)

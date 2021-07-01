@@ -4,7 +4,7 @@ using System.IO.Pipelines;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace SecureShell.Protocol
+namespace SecureShell.Transport
 {
     /// <summary>
     /// Represents a packet payload.
@@ -16,7 +16,7 @@ namespace SecureShell.Protocol
         /// Gets the byte count.
         /// </summary>
         /// <returns>The byte count of the message.</returns>
-        int GetByteCount();
+        uint GetByteCount();
 
         /// <summary>
         /// Creates a decoder for this message.

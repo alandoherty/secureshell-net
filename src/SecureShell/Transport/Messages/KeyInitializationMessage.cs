@@ -1,4 +1,4 @@
-﻿using SecureShell.Protocol.Utilities;
+﻿using SecureShell.Transport.Utilities;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -8,7 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace SecureShell.Protocol.Messages
+namespace SecureShell.Transport.Messages
 {
     public struct KeyInitializationMessage : IPacketMessage<KeyInitializationMessage>
     {
@@ -62,13 +62,13 @@ namespace SecureShell.Protocol.Messages
                 Completed
             }
             
-            public bool Decode(ref KeyInitializationMessage message, ref SequenceReader<byte> reader)
+            public OperationStatus Decode(ref KeyInitializationMessage message, ref SequenceReader<byte> reader)
             {
                 while (true) {
                     if (_state == State.Cookie) {
                         // we need 16 bytes to read the cookie
                         if (reader.Remaining < 16)
-                            return true;
+                            return OperationStatus.NeedMoreData;
                         
                         // extract the cookie
                         if (BitConverter.IsLittleEndian) {
@@ -122,10 +122,8 @@ namespace SecureShell.Protocol.Messages
                             // decode the namelist as much as possible
                             var decodeResult = _nameListDecoder.Decode(names, ref reader);
 
-                            if (decodeResult == NamelistDecoder.DecodeResult.NeedsData) {
-                                return true;
-                            } else if (decodeResult == NamelistDecoder.DecodeResult.Length) {
-                                continue;
+                            if (decodeResult == OperationStatus.NeedMoreData) {
+                                return OperationStatus.NeedMoreData;
                             }
 
                             _nameListIndex++;
@@ -135,9 +133,9 @@ namespace SecureShell.Protocol.Messages
                         // once we've got all 10 namelists we're done
                         _state = State.Tail;
                     } else if (_state == State.Tail) {
-                        // we need 16 bytes to read the cookie
+                        // additional data
                         if (reader.Remaining < 5)
-                            return true;
+                            return OperationStatus.NeedMoreData;
 
                         reader.TryRead(out byte firstKexFollows);
                         message.FirstKeyExchangePacketFollows = firstKexFollows == 1;
@@ -145,7 +143,7 @@ namespace SecureShell.Protocol.Messages
                         message.Reserved = (uint)reserved;
                         _state = State.Completed;
                     } else {
-                        return false;
+                        return OperationStatus.Done;
                     }
                 }
             }
@@ -166,23 +164,55 @@ namespace SecureShell.Protocol.Messages
         {
             public bool Encode(in KeyInitializationMessage message, IBufferWriter<byte> writer)
             {
-                throw new NotImplementedException();
+                //TODO: requires optimisation
+                static void WriteNamelist(List<string> names, IBufferWriter<byte> writer)
+                {
+                    byte[] namelistBytes = Encoding.UTF8.GetBytes(string.Join(',', names));
+
+                    Span<byte> lengthBytes = writer.GetSpan(4);
+                    BitConverter.TryWriteBytes(lengthBytes.Slice(0, 4), (uint)namelistBytes.Length);
+                    lengthBytes.Slice(0, 4).Reverse();
+
+                    writer.Advance(4);
+                    writer.Write(namelistBytes);
+                    
+                }
+
+                Span<byte> cookieBytes = writer.GetSpan(16);
+                
+                BitConverter.TryWriteBytes(cookieBytes.Slice(0, 8), message.Cookie1);
+                BitConverter.TryWriteBytes(cookieBytes.Slice(8, 8), message.Cookie2);
+                writer.Advance(16);
+
+                WriteNamelist(message.KeyExchangeAlgorithms, writer);
+                WriteNamelist(message.ServerHostKeyAlgorithms, writer);
+                WriteNamelist(message.EncryptionAlgorithmsClientToServer, writer);
+                WriteNamelist(message.EncryptionAlgorithmsServerToClient, writer);
+                WriteNamelist(message.MacAlgorithmsClientToServer, writer);
+                WriteNamelist(message.MacAlgorithmsServerToClient, writer);
+                WriteNamelist(message.CompressionAlgorithmsClientToServer, writer);
+                WriteNamelist(message.CompressionAlgorithmsServerToClient, writer);
+                WriteNamelist(message.LanguagesClientToServer, writer);
+                WriteNamelist(message.LanguagesServerToClient, writer);
+
+                writer.Write(new byte[] { (byte)(message.FirstKeyExchangePacketFollows ? 1 : 0) });
+                writer.Write(BitConverter.GetBytes(message.Reserved));
+
+                return true;
             }
 
             public void Reset()
             {
-               
-                throw new NotImplementedException();
             }
         }
 
         /// <inheritdoc/>
-        public int GetByteCount()
+        public uint GetByteCount()
         {
-            static int GetNamesByteCount(List<string> names)
+            static uint GetNamesByteCount(List<string> names)
             {
-                return (names.Count <= 1 ? 0 : names.Count - 1) // commas
-                    + names.Sum(s => Encoding.ASCII.GetByteCount(s)); // contents
+                return (uint)((names.Count <= 1 ? 0 : names.Count - 1) // commas
+                    + names.Sum(s => Encoding.ASCII.GetByteCount(s))); // contents
             }
 
             return 16 // cookie

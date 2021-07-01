@@ -1,4 +1,4 @@
-namespace SecureShell.Protocol
+namespace SecureShell.Transport
 {
     /// <summary>
     /// Defines the known message numbers.

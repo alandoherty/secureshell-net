@@ -14,8 +14,9 @@ namespace Example.Ssh
             try {
                 connection = await ctx.GetConnectionAsync(
                         new Progress<PeerState>(p => Console.WriteLine($"ConnectProgress: {p}")));
-            } catch (Exception ex) {
                 
+            } catch (Exception ex) {
+                Console.Error.WriteLine(ex);
             }
         }
 

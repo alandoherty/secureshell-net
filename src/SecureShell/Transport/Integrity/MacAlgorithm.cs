@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SecureShell.Integrity
+namespace SecureShell.Transport.Integrity
 {
     /// <summary>
     /// Represents integrity MAC algorithims and provides the built-ins.

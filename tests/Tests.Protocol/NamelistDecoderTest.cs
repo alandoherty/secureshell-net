@@ -1,4 +1,4 @@
-using SecureShell.Protocol.Utilities;
+using SecureShell.Transport.Utilities;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -53,11 +53,7 @@ namespace Tests.Protocol
             ReadOnlySequence<byte> sequence = new ReadOnlySequence<byte>(BuildNamelist(namelist));
             SequenceReader<byte> sequenceReader = new SequenceReader<byte>(sequence);
 
-            if (decoder.Decode(names, ref sequenceReader) != NamelistDecoder.DecodeResult.Length) {
-                throw new Exception("The decoder did not return the length");
-            }
-
-            if (decoder.Decode(names, ref sequenceReader) != NamelistDecoder.DecodeResult.Complete) {
+            if (decoder.Decode(names, ref sequenceReader) != OperationStatus.Done) {
                 throw new Exception("The decoder did not return the length");
             }
 

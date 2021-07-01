@@ -3,7 +3,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Text;
 
-namespace SecureShell.Protocol.Utilities
+namespace SecureShell.Transport.Utilities
 {
     /// <summary>
     /// A helper decoder for namelists.
@@ -14,54 +14,21 @@ namespace SecureShell.Protocol.Utilities
         private int _processedLength;
 
         /// <summary>
-        /// Gets the length.
-        /// </summary>
-        public uint? Length => (uint?)_length;
-
-        /// <summary>
-        /// Defines the result of a decode operation.
-        /// </summary>
-        public enum DecodeResult
-        {
-            /// <summary>
-            /// The length has been decoded.
-            /// </summary>
-            Length,
-            
-            /// <summary>
-            /// Needs more data to decode.
-            /// </summary>
-            NeedsData,
-
-            /// <summary>
-            /// The current name is bigger than 255 bytes.
-            /// </summary>
-            NameTooBig,
-            
-            /// <summary>
-            /// Completes the decoding.
-            /// </summary>
-            Complete
-        }
-
-        /// <summary>
         /// Decode a namelist from the provided sequence reader. 
         /// </summary>
         /// <param name="names"></param>
         /// <param name="reader"></param>
         /// <returns></returns>
-        public DecodeResult Decode(List<string> names, ref SequenceReader<byte> reader)
+        public OperationStatus Decode(List<string> names, ref SequenceReader<byte> reader)
         {
-            // we need to read the namelist length first
+            // we need to read the length first
             if (_length == null) {
                 if (reader.Remaining < 4)
-                    return DecodeResult.NeedsData;
+                    return OperationStatus.NeedMoreData;
 
                 reader.TryReadBigEndian(out int nameListLength);
                 _length = nameListLength;
                 _processedLength = 0;
-                
-                return DecodeResult.Length;
             }
             
             // create a new sequence reader from the existing sequence this allows us to limit the sequence if we need to, and also gives us
@@ -70,7 +37,7 @@ namespace SecureShell.Protocol.Utilities
             int remainingLength = (int)(_length.Value - _processedLength);
 
             if (remainingLength == 0) {
-                return DecodeResult.Complete;
+                return OperationStatus.Done;
             }
 
             if (reader.Remaining > remainingLength) {
@@ -100,24 +67,24 @@ namespace SecureShell.Protocol.Utilities
                         copyReader.TryCopyTo(remainingNameBytes.AsSpan());
                         reader.Advance(remainingNameBytes.Length);
                         names.Add(Encoding.ASCII.GetString(remainingNameBytes));
-                        return DecodeResult.Complete;
+                        return OperationStatus.Done;
                     } else {
                         // we limit the strings to 255 bytes maximum for each name, this is important as since we don't buffer
                         // them we take directly from the sequence. this prevents copying but must be careful not to elapse
                         // the buffer of our caller so we must give up eventually after not receiving a comma
                         if (remainingLength > 256)
-                            return DecodeResult.NameTooBig;
+                            return OperationStatus.InvalidData;
 
-                        return DecodeResult.NeedsData;
+                        return OperationStatus.NeedMoreData;
                     }
                 }
             }
 
             // if we've processed everything we're done
             if (_processedLength == _length)
-                return DecodeResult.Complete;
+                return OperationStatus.Done;
 
-            return DecodeResult.NeedsData;
+            return OperationStatus.NeedMoreData;
         }
         
         /// <summary>

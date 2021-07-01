@@ -3,7 +3,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Text;
 
-namespace SecureShell.Protocol.Messages
+namespace SecureShell.Transport.Messages
 {
     /// <summary>
     /// The disconnect transport message.
@@ -30,8 +30,18 @@ namespace SecureShell.Protocol.Messages
         /// </summary>
         public struct Decoder : IMessageDecoder<DisconnectMessage>
         {
-            private uint? _descriptionLength;
-            private uint? _languageTagLength;
+            private State _state;
+
+            private uint _stringLength;
+            private StringBuilder _stringBuilder;
+            private int _stringProgress;
+
+            enum State
+            {
+                ReasonCode,
+                Description,
+                LanguageTag
+            }
 
             /// <summary>
             /// Gets or sets if the description should be skipped. If true <see cref="DisconnectMessage.Description"/> will be an empty string.
@@ -46,7 +56,7 @@ namespace SecureShell.Protocol.Messages
             public bool IgnoreLanguageTag { get; set; }
 
             /// <inheritdoc/>
-            public bool Decode(ref DisconnectMessage message, ref SequenceReader<byte> reader)
+            public OperationStatus Decode(ref DisconnectMessage message, ref SequenceReader<byte> reader)
             {
                 throw new NotImplementedException();
             }
@@ -54,7 +64,7 @@ namespace SecureShell.Protocol.Messages
             /// <inheritdoc/>
             public void Reset()
             {
-                throw new NotImplementedException();
+                _state = State.ReasonCode;
             }
         }
 
@@ -67,23 +77,14 @@ namespace SecureShell.Protocol.Messages
         }
 
         /// <inheritdoc/>
-        public IMessageDecoder<DisconnectMessage> CreateDecoder()
-        {
-            return new Decoder();
-        }
+        public IMessageDecoder<DisconnectMessage> CreateDecoder() => new Decoder();
 
         /// <inheritdoc/>
-        public IMessageEncoder<DisconnectMessage> CreateEncoder()
-        {
-            throw new NotImplementedException();
-        }
+        public IMessageEncoder<DisconnectMessage> CreateEncoder() => throw new NotImplementedException();
 
         /// <inheritdoc/>
-        public int GetByteCount()
-        {
-            return 4
+        public uint GetByteCount() => (uint)(4
                 + 4 + (Description == null ? 0 : Encoding.UTF8.GetByteCount(Description))
-                + 4 + (LanguageTag == null ? 0 : Encoding.UTF8.GetByteCount(LanguageTag));
-        }
+                + 4 + (LanguageTag == null ? 0 : Encoding.UTF8.GetByteCount(LanguageTag)));
     }
 }

@@ -38,7 +38,8 @@ namespace SecureShell
             NetworkStream stream = new NetworkStream(socket);
 
             // create pipes
-            PipeReader reader = PipeReader.Create(stream);
+            PipeReader reader = PipeReader.Create(stream, new StreamPipeReaderOptions() {
+            });
             PipeWriter writer = PipeWriter.Create(stream);
 
             // create the connection and return a context

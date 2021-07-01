@@ -18,5 +18,10 @@ namespace SecureShell
         /// The timeout for exchanging identification.
         /// </summary>
         public TimeSpan? IdentificationExchangeTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
+        /// <summary>
+        /// The maximum packet size the peer will accept, must be 35000 or greater.
+        /// </summary>
+        internal int MaximumPacketSize { get; set; } = 35000;
     }
 }
