@@ -35,6 +35,11 @@ namespace SecureShell
         private Random _insecureRandom = new Random();
 
         /// <summary>
+        /// Gets the peer state.
+        /// </summary>
+        public PeerState State => _state;
+
+        /// <summary>
         /// Gets the local identification information.
         /// </summary>
         public SshIdentification LocalIdentification => _localIdentification;
@@ -131,11 +136,11 @@ namespace SecureShell
             
             // create the timeout cancellation source that will dispose the peer
             CancellationTokenRegistration timeoutRegistration = default;
-            
+
             if (_options.IdentificationExchangeTimeout != null) {
                 CancellationTokenSource timeoutTokenSource =
                     new CancellationTokenSource(_options.IdentificationExchangeTimeout.Value);
-                timeoutTokenSource.Token.Register((o) => {
+                timeoutRegistration = timeoutTokenSource.Token.Register((o) => {
                     ((SshPeer) o).Dispose(new TimeoutException("Timeout while exchanging identification lines"));
                 }, this);
             }
@@ -521,7 +526,7 @@ namespace SecureShell
             // gracefully close the peer
             //TODO: if connected send disconnect message
             
-            _state = PeerState.Closed;
+            _state = PeerState.Closing;
             await _reader.CompleteAsync(exception).ConfigureAwait(false);
             await _writer.CompleteAsync(exception).ConfigureAwait(false);
             _state = PeerState.Closed;
@@ -530,6 +535,7 @@ namespace SecureShell
         private void Dispose(Exception exception = null)
         {
             // terminate the peer
+            _state = PeerState.Closing;
             _reader.Complete(exception);
             _writer.Complete(exception);
             _state = PeerState.Closed;

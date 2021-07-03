@@ -13,22 +13,31 @@ namespace SecureShell.Transport
     /// </summary>
     public struct IncomingPacket : IDisposable
     {
+        private ReadOnlySequence<byte> _payload;
         private SequencePosition _advanceTo;
 
         /// <summary>
         /// The packet header.
         /// </summary>
-        public readonly PacketHeader Header;
+        public readonly PacketHeader Header { get; }
 
         /// <summary>
         /// The message payload.
         /// </summary>
-        public readonly ReadOnlySequence<byte> Payload;
+        public readonly ReadOnlySequence<byte> Payload {
+            get {
+                if (Peer.State == PeerState.Closed || Peer.State == PeerState.Closing) {
+                    throw new InvalidOperationException("The peer is not either closing or closed and buffers are inaccessible");
+                }
+
+                return _payload;
+            }
+        }
 
         /// <summary>
         /// The peer which received the packet.
         /// </summary>
-        public readonly SshPeer Peer;
+        public readonly SshPeer Peer { get; }
 
         /// <summary>
         /// Advances the peer past the packet, any decoded messages will reference invalid buffers once called. Use 
@@ -65,7 +74,7 @@ namespace SecureShell.Transport
         internal IncomingPacket(PacketHeader header, ReadOnlySequence<byte> payload, SshPeer peer, SequencePosition advanceTo)
         {
             Header = header;
-            Payload = payload;
+            _payload = payload;
             _advanceTo = advanceTo;
             Peer = peer;
         }
