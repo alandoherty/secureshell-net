@@ -123,7 +123,7 @@ namespace SecureShell.Security.KeyExchange
                 // send reply
                 ReplyMessage replyMsg = default;
                 replyMsg.HostKeyCertificates = peer._hostKey.ToByteArray();
-                replyMsg.Signature = peer._hostKey.Sign(Span<byte>.Empty, HashAlgorithmName.SHA1);
+                replyMsg.Signature = new MessageBuffer(peer._hostKey.Sign(Span<byte>.Empty, HashAlgorithmName.SHA1));
                 replyMsg.F = _serverExchange;
 
                 await peer.WritePacketAsync(replyMsg, cancellationToken);
@@ -152,7 +152,7 @@ namespace SecureShell.Security.KeyExchange
         {
             public ReadOnlyMemory<byte> HostKeyCertificates;
             public BigInteger F;
-            public ReadOnlyMemory<byte> Signature;
+            public MessageBuffer Signature;
 
             public struct Encoder : IMessageEncoder<ReplyMessage>
             {
@@ -182,11 +182,11 @@ namespace SecureShell.Security.KeyExchange
                     offset += message.F.GetByteCount();
 
                     // signature
-                    BitConverter.TryWriteBytes(bytes.Slice(offset, 4), (uint)message.Signature.Length);
+                    int signatureLength = message.Signature.GetByteCount();
+                    BitConverter.TryWriteBytes(bytes.Slice(offset, 4), (uint)signatureLength);
                     bytes.Slice(offset, 4).Reverse();
                     offset += 4;
-
-                    message.Signature.Span.CopyTo(bytes.Slice(offset, message.Signature.Length));
+                    message.Signature.TryWriteBytes(bytes.Slice(offset, signatureLength), out int _);
 
                     writer.Advance(byteCount);
 
@@ -219,7 +219,7 @@ namespace SecureShell.Security.KeyExchange
 
                     reader.TryReadBigEndian(out int signatureLen);
                     offset += 4;
-                    message.Signature = reader.Sequence.First.Slice(offset, signatureLen);
+                    message.Signature = new MessageBuffer(reader.Sequence.First.Slice(offset, signatureLen));
                     reader.Advance(signatureLen);
                     offset += signatureLen;
 
@@ -240,7 +240,7 @@ namespace SecureShell.Security.KeyExchange
             public uint GetByteCount() => 1U
                 + 4U + (uint)HostKeyCertificates.Length
                 + 4U + (uint)F.GetByteCount()
-                + 4U + (uint)Signature.Length;
+                + 4U + (uint)Signature.GetByteCount();
         }
         
         struct InitMessage : IPacketMessage<InitMessage>
