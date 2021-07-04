@@ -3,7 +3,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Text;
 
-namespace SecureShell.Transport
+namespace SecureShell.Transport.Protocol
 {
     /// <summary>
     /// Represents a packet header structure.

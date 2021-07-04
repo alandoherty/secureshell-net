@@ -1,3 +1,4 @@
+using SecureShell.Transport.Protocol;
 using System.Buffers;
 
 namespace SecureShell.Transport

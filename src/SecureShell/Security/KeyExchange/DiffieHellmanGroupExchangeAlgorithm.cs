@@ -1,4 +1,5 @@
 ﻿using SecureShell.Transport;
+using SecureShell.Transport.Protocol;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -123,7 +124,7 @@ namespace SecureShell.Security.KeyExchange
                 // send reply
                 ReplyMessage replyMsg = default;
                 replyMsg.HostKeyCertificates = peer._hostKey.ToByteArray();
-                replyMsg.Signature = new MessageBuffer(peer._hostKey.Sign(Span<byte>.Empty, HashAlgorithmName.SHA1));
+                replyMsg.Signature = new StringBuffer(peer._hostKey.Sign(Span<byte>.Empty, HashAlgorithmName.SHA1));
                 replyMsg.F = _serverExchange;
 
                 await peer.WritePacketAsync(replyMsg, cancellationToken);
@@ -150,8 +151,8 @@ namespace SecureShell.Security.KeyExchange
         #region Messages
         struct ReplyMessage : IPacketMessage<ReplyMessage>
         {
-            public ReadOnlyMemory<byte> HostKeyCertificates;
-            public BigInteger F;
+            public MessageBuffer HostKeyCertificates;
+            public MessageBuffer F;
             public MessageBuffer Signature;
 
             public struct Encoder : IMessageEncoder<ReplyMessage>
@@ -166,19 +167,19 @@ namespace SecureShell.Security.KeyExchange
                     offset++;
 
                     // host key certificates
-                    BitConverter.TryWriteBytes(bytes.Slice(offset, 4), (uint)message.HostKeyCertificates.Length);
+                    BitConverter.TryWriteBytes(bytes.Slice(offset, 4), message.HostKeyCertificates.GetByteCount());
                     bytes.Slice(offset, 4).Reverse();
                     offset += 4;
 
-                    message.HostKeyCertificates.Span.CopyTo(bytes.Slice(offset, message.HostKeyCertificates.Length));
-                    offset += message.HostKeyCertificates.Length;
+                    message.HostKeyCertificates.TryWriteBytes(bytes.Slice(offset), out int bytesWritten);
+                    offset += bytesWritten;
 
                     // F
                     BitConverter.TryWriteBytes(bytes.Slice(offset, 4), (uint)message.F.GetByteCount());
                     bytes.Slice(offset, 4).Reverse();
                     offset += 4;
 
-                    message.F.TryWriteBytes(bytes.Slice(offset, message.F.GetByteCount()), out _, false, true);
+                    message.F.TryWriteBytes(bytes.Slice(offset, message.F.GetByteCount()), out _);
                     offset += message.F.GetByteCount();
 
                     // signature
@@ -199,7 +200,7 @@ namespace SecureShell.Security.KeyExchange
             public struct Decoder : IMessageDecoder<ReplyMessage>
             {
                 /// <inheritdoc/>
-                public OperationStatus Decode(ref ReplyMessage message, ref SequenceReader<byte> reader)
+                public OperationStatus Decode(ref ReplyMessage message, ref MessageReader reader)
                 {
                     //TODO: more checks for validity
                     reader.Advance(1);
@@ -219,7 +220,7 @@ namespace SecureShell.Security.KeyExchange
 
                     reader.TryReadBigEndian(out int signatureLen);
                     offset += 4;
-                    message.Signature = new MessageBuffer(reader.Sequence.First.Slice(offset, signatureLen));
+                    message.Signature = new StringBuffer(reader.Sequence.First.Slice(offset, signatureLen));
                     reader.Advance(signatureLen);
                     offset += signatureLen;
 
@@ -238,7 +239,7 @@ namespace SecureShell.Security.KeyExchange
 
             /// <inheritdoc/>
             public uint GetByteCount() => 1U
-                + 4U + (uint)HostKeyCertificates.Length
+                + 4U + (uint)HostKeyCertificates.GetByteCount()
                 + 4U + (uint)F.GetByteCount()
                 + 4U + (uint)Signature.GetByteCount();
         }
@@ -274,7 +275,7 @@ namespace SecureShell.Security.KeyExchange
                 private bool _exponent;
 
                 /// <inheritdoc/>
-                public OperationStatus Decode(ref InitMessage message, ref SequenceReader<byte> reader)
+                public OperationStatus Decode(ref InitMessage message, ref MessageReader reader)
                 {
                     reader.Advance(1);
 

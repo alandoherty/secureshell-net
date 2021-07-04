@@ -1,4 +1,5 @@
 ﻿using SecureShell.Transport;
+using SecureShell.Transport.Protocol;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -103,20 +104,20 @@ namespace SecureShell.Security.KeyExchange
             public struct Decoder : IMessageDecoder<RequestExchangeMessage>
             {
                 /// <inheritdoc/>
-                public OperationStatus Decode(ref RequestExchangeMessage message, ref SequenceReader<byte> reader)
+                public OperationStatus Decode(ref RequestExchangeMessage message, ref MessageReader reader)
                 {
                     if (reader.Remaining < 12)
                         return OperationStatus.NeedMoreData;
 
                     int a;
 
-                    reader.TryReadBigEndian(out a);
+                    reader.TryRead(out a);
                     message.Minimum = (uint)a;
 
-                    reader.TryReadBigEndian(out a);
+                    reader.TryRead(out a);
                     message.N = (uint)a;
 
-                    reader.TryReadBigEndian(out a);
+                    reader.TryRead(out a);
                     message.Maximum = (uint)a;
 
                     return OperationStatus.Done;
@@ -171,7 +172,7 @@ namespace SecureShell.Security.KeyExchange
             public struct Decoder : IMessageDecoder<GroupExchangeMessage>
             {
                 /// <inheritdoc/>
-                public OperationStatus Decode(ref GroupExchangeMessage message, ref SequenceReader<byte> reader)
+                public OperationStatus Decode(ref GroupExchangeMessage message, ref MessageReader reader)
                 {
                     throw new NotImplementedException();
                 }

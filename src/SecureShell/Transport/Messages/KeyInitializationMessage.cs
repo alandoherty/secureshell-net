@@ -1,4 +1,5 @@
-﻿using SecureShell.Transport.Utilities;
+﻿using SecureShell.Transport.Protocol;
+using SecureShell.Transport.Utilities;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -62,7 +63,7 @@ namespace SecureShell.Transport.Messages
                 Completed
             }
             
-            public OperationStatus Decode(ref KeyInitializationMessage message, ref SequenceReader<byte> reader)
+            public OperationStatus Decode(ref KeyInitializationMessage message, ref MessageReader reader)
             {
                 reader.Advance(1); // ignore message number
 
@@ -73,13 +74,8 @@ namespace SecureShell.Transport.Messages
                             return OperationStatus.NeedMoreData;
                         
                         // extract the cookie
-                        if (BitConverter.IsLittleEndian) {
-                            reader.TryReadLittleEndian(out message.Cookie1);
-                            reader.TryReadLittleEndian(out message.Cookie2);
-                        } else {
-                            reader.TryReadBigEndian(out message.Cookie1);
-                            reader.TryReadBigEndian(out message.Cookie2);
-                        }
+                        reader.TryRead(out message.Cookie1);
+                        reader.TryRead(out message.Cookie2);
 
                         _state = State.NameList;
                     } else if (_state == State.NameList) {
@@ -122,7 +118,7 @@ namespace SecureShell.Transport.Messages
                             }
 
                             // decode the namelist as much as possible
-                            var decodeResult = _nameListDecoder.Decode(names, ref reader);
+                            var decodeResult = _nameListDecoder.Decode(names, ref reader.Reader);
 
                             if (decodeResult == OperationStatus.NeedMoreData) {
                                 return OperationStatus.NeedMoreData;
@@ -141,7 +137,7 @@ namespace SecureShell.Transport.Messages
 
                         reader.TryRead(out byte firstKexFollows);
                         message.FirstKeyExchangePacketFollows = firstKexFollows == 1;
-                        reader.TryReadBigEndian(out int reserved);
+                        reader.TryRead(out int reserved);
                         message.Reserved = (uint)reserved;
                         _state = State.Completed;
                     } else {

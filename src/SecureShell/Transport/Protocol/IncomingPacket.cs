@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace SecureShell.Transport
+namespace SecureShell.Transport.Protocol
 {
     /// <summary>
     /// Represents a packet that has been read into internal buffers in a <see cref="SecureShell.Peer"/>. 

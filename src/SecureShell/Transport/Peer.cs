@@ -15,6 +15,7 @@ using SecureShell.Security.Integrity;
 using SecureShell.Security.KeyExchange;
 using SecureShell.Transport;
 using SecureShell.Transport.Messages;
+using SecureShell.Transport.Protocol;
 
 namespace SecureShell.Transport
 {
@@ -34,8 +35,6 @@ namespace SecureShell.Transport
         private MacAlgorithm _remoteMac = MacAlgorithm.None;
         private SshOptions _options = SshOptions.Default;
         internal HostKey _hostKey; //TODO: not be internal
-
-        private Random _insecureRandom = new Random();
 
         /// <summary>
         /// Gets the peer state.
@@ -267,9 +266,9 @@ namespace SecureShell.Transport
                 // if closing/closed we are completing/completed
                 if (_state == PeerState.Closing || _state == PeerState.Closed)
                     return null;
-                
-                var result = await _reader.ReadAsync();
-                
+
+                var result = await _reader.ReadAsync().ConfigureAwait(false);
+
                 // look for carriage return
                 var lrPos = result.Buffer.PositionOf((byte)'\n');
 
@@ -340,6 +339,7 @@ namespace SecureShell.Transport
             await _writer.FlushAsync();
         }
 
+        #region Reading
         /// <summary>
         /// Reads a packet from the peer, handles encryption and integrity.
         /// </summary>
@@ -393,12 +393,9 @@ namespace SecureShell.Transport
                     throw new NotImplementedException(); //TODO
             }
         }
+        #endregion
 
-        internal void AdvanceTo(SequencePosition position)
-        {
-            _reader.AdvanceTo(position);
-        }
-
+        #region Writing
         /// <summary>
         /// Writes a packet to the peer without specifying a encoder type, this will result in additional allocations.
         /// </summary>
@@ -421,6 +418,65 @@ namespace SecureShell.Transport
         /// <param name="encoder">The encoder.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns></returns>
+        public void WritePacket<TMessage, TMessageEncoder>(TMessage message, TMessageEncoder encoder = default, CancellationToken cancellationToken = default)
+            where TMessage : IPacketMessage<TMessage>
+            where TMessageEncoder : IMessageEncoder<TMessage>
+        {
+            static void WriteHeader(IBufferWriter<byte> writer, PacketHeader header)
+            {
+                Span<byte> bytes = writer.GetSpan(PacketHeader.Size);
+                header.TryWriteBytes(bytes);
+                writer.Advance(PacketHeader.Size);
+            }
+
+            static void WritePadding(IBufferWriter<byte> writer, int count)
+            {
+                Debug.Assert(count <= 255);
+
+                Span<byte> paddingBytes = writer.GetSpan(count);
+                paddingBytes.Slice(0, count)
+                    .Fill(0);
+                writer.Advance(count);
+            }
+
+            // calculate lengths
+            uint messageLength = message.GetByteCount(); // message length, includes the message number already
+            uint paddingLength = (byte)(8 - ((messageLength + 1 + 4) % 8)); // padding is entire packet in block of 8
+
+            //TODO: the packet length must be at least 16 bytes
+            //TODO: this is a dirty hack for small padding
+            if (paddingLength < 4) {
+                paddingLength += 8;
+            }
+
+            uint packetLength = messageLength + 1 + paddingLength; // packet length doesn't include itself or mac
+
+            PacketHeader header = new PacketHeader() {
+                Length = packetLength,
+                PaddingLength = (byte)paddingLength
+            };
+
+            WriteHeader(_writer, header);
+
+            // encode message piece by piece
+            bool moreData = false;
+
+            do {
+                moreData = !encoder.Encode(message, _writer);
+            } while (moreData);
+
+            WritePadding(_writer, header.PaddingLength);
+        }
+
+        /// <summary>
+        /// Writes a packet to the peer.
+        /// </summary>
+        /// <typeparam name="TMessage">The message.</typeparam>
+        /// <typeparam name="TMessageEncoder">The encoder.</typeparam>
+        /// <param name="message">The message.</param>
+        /// <param name="encoder">The encoder.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns></returns>
         public async ValueTask WritePacketAsync<TMessage, TMessageEncoder>(TMessage message, TMessageEncoder encoder = default, CancellationToken cancellationToken = default)
             where TMessage : IPacketMessage<TMessage>
             where TMessageEncoder : IMessageEncoder<TMessage>
@@ -432,12 +488,13 @@ namespace SecureShell.Transport
                 writer.Advance(PacketHeader.Size);
             }
             
-            static void WritePadding(IBufferWriter<byte> writer, Random random, int count)
+            static void WritePadding(IBufferWriter<byte> writer, int count)
             {
                 Debug.Assert(count <= 255);
 
                 Span<byte> paddingBytes = writer.GetSpan(count);
-                random.NextBytes(paddingBytes.Slice(0, count));
+                paddingBytes.Slice(0, count)
+                    .Fill(0);
                 writer.Advance(count);
             }
 
@@ -471,8 +528,14 @@ namespace SecureShell.Transport
                 moreData = !encoder.Encode(message, _writer);
             } while (moreData);
 
-            WritePadding(_writer, _insecureRandom, header.PaddingLength);
+            WritePadding(_writer, header.PaddingLength);
             await _writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+        #endregion
+
+        internal void AdvanceTo(SequencePosition position)
+        {
+            _reader.AdvanceTo(position);
         }
 
         private async ValueTask DisconnectAsync(Exception exception = null)

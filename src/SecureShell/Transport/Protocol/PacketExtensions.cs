@@ -3,7 +3,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Text;
 
-namespace SecureShell.Transport
+namespace SecureShell.Transport.Protocol
 {
     /// <summary>
     /// Provides extensions for packet functionality.
@@ -55,8 +55,7 @@ namespace SecureShell.Transport
             where TMessage : IPacketMessage<TMessage>
             where TMessageDecoder : IMessageDecoder<TMessage>
         {
-            SequenceReader<byte> reader = new SequenceReader<byte>(packet.Payload);
-            reader.Advance(1);
+            MessageReader reader = new MessageReader(packet.Payload);
             return TryDecode(ref reader, out msg, decoder);
         }
 
@@ -73,11 +72,11 @@ namespace SecureShell.Transport
             where TMessage : IPacketMessage<TMessage>
             where TMessageDecoder : IMessageDecoder<TMessage>
         {
-            SequenceReader<byte> reader = new SequenceReader<byte>(packet.Payload);
+            MessageReader reader = new MessageReader(packet.Payload);
             return TryDecode(ref reader, out msg, decoder);
         }
 
-        private static bool TryDecode<TMessage, TMessageDecoder>(ref SequenceReader<byte> reader, out TMessage msg, TMessageDecoder decoder = default)
+        private static bool TryDecode<TMessage, TMessageDecoder>(ref MessageReader reader, out TMessage msg, TMessageDecoder decoder = default)
             where TMessage : IPacketMessage<TMessage>
             where TMessageDecoder : IMessageDecoder<TMessage>
         {

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using SecureShell.Transport.Protocol;
+using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Text;
@@ -21,7 +22,7 @@ namespace SecureShell.Transport.Messages
         public struct Decoder : IMessageDecoder<GenericMessage>
         {
             /// <inheritdoc/>
-            public OperationStatus Decode(ref GenericMessage message, ref SequenceReader<byte> reader)
+            public OperationStatus Decode(ref GenericMessage message, ref MessageReader reader)
             {
                 if (reader.TryRead(out byte msgNum)) {
                     message.Number = (MessageNumber)msgNum;

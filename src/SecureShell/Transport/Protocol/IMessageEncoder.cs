@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace SecureShell.Transport
+namespace SecureShell.Transport.Protocol
 {
     /// <summary>
     /// Provides a standard interface to write a message.

@@ -1,4 +1,5 @@
 ﻿using SecureShell.Transport;
+using SecureShell.Transport.Protocol;
 using System;
 using System.Collections.Generic;
 using System.Text;
