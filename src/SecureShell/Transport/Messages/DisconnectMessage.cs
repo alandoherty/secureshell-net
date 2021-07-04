@@ -8,7 +8,7 @@ namespace SecureShell.Transport.Messages
     /// <summary>
     /// The disconnect transport message.
     /// </summary>
-    public struct DisconnectMessage : IPacketMessage<DisconnectMessage>
+    internal struct DisconnectMessage : IPacketMessage<DisconnectMessage>
     {
         /// <summary>
         /// The machine-readable reason why the connection was disconnected.

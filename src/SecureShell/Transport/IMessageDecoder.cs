@@ -13,7 +13,7 @@ namespace SecureShell.Transport
         where TMessage : IPacketMessage<TMessage>
     {
         /// <summary>
-        /// Decodes part of the message.
+        /// Decodes the message, the entire message is available. Implementers must handle the message number byte.
         /// </summary>
         /// <param name="message">The message.</param>
         /// <param name="reader">The sequence reader.</param>

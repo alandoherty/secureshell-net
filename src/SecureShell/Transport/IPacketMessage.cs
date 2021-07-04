@@ -13,7 +13,7 @@ namespace SecureShell.Transport
         where TMessage : IPacketMessage<TMessage>
     {
         /// <summary>
-        /// Gets the byte count.
+        /// Gets the byte count, this must include the message number if applicable.
         /// </summary>
         /// <returns>The byte count of the message.</returns>
         uint GetByteCount();

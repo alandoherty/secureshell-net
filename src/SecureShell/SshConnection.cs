@@ -1,4 +1,5 @@
-﻿using System;
+﻿using SecureShell.Transport;
+using System;
 using System.Collections.Generic;
 using System.IO.Pipelines;
 using System.Net;
@@ -9,7 +10,7 @@ namespace SecureShell
     /// <summary>
     /// Represents a SSH connection accepted via a <see cref="SshListener"/>.
     /// </summary>
-    public class SshConnection : SshPeer
+    public class SshConnection : Peer
     {
         private EndPoint _localEndpoint;
         private EndPoint _remoteEndpoint;

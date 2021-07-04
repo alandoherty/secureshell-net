@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SecureShell
+namespace SecureShell.Transport
 {
     /// <summary>
     /// Represents the state of the peer, all peers begin in the <see cref="IdentificationExchange"/> state.

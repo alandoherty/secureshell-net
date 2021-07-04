@@ -1,4 +1,5 @@
-﻿using System;
+﻿using SecureShell.Transport;
+using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Numerics;
@@ -6,7 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace SecureShell.Transport.KeyExchange
+namespace SecureShell.Security.KeyExchange
 {
     class DiffieHellmanExchangeAlgorithm : ExchangeAlgorithm
     {
@@ -14,11 +15,20 @@ namespace SecureShell.Transport.KeyExchange
         private const byte SSH_MSG_KEX_DH_GEX_REQUEST = 34;
         private const byte SSH_MSG_KEX_DH_GEX_GROUP = 31;
 
+        /// <inheritdoc/>
+        public override string Name => throw new NotImplementedException();
+
+        /// <inheritdoc/>
+        public override ExchangeAlgorithm Reset()
+        {
+            return new DiffieHellmanExchangeAlgorithm();
+        }
+
         #region Exchange
         private int _groupSize;
 
         /// <inheritdoc/>
-        public override ValueTask ExchangeAsync(CancellationToken cancellationToken = default)
+        protected internal override ValueTask ExchangeAsync(Peer peer, CancellationToken cancellationToken = default)
         {
             // reset
             _groupSize = default;
@@ -29,7 +39,7 @@ namespace SecureShell.Transport.KeyExchange
         }
 
         /// <inheritdoc/>
-        public override async ValueTask<bool> ProcessExchangeAsync(IncomingPacket packet, CancellationToken cancellationToken)
+        protected internal override async ValueTask<bool> ProcessExchangeAsync(Peer peer, IncomingPacket packet, CancellationToken cancellationToken)
         {
             packet.TryGetMessageNumber(out MessageNumber num);
 

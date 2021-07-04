@@ -1,4 +1,5 @@
 ﻿using SecureShell;
+using SecureShell.Transport;
 using System;
 using System.Net;
 using System.Threading.Tasks;
@@ -12,8 +13,7 @@ namespace Example.Ssh
             SshConnection connection;
 
             try {
-                connection = await ctx.GetConnectionAsync(
-                        new Progress<PeerState>(p => Console.WriteLine($"ConnectProgress: {p}")));
+                connection = await ctx.GetConnectionAsync();
                 
             } catch (Exception ex) {
                 Console.Error.WriteLine(ex);
@@ -22,6 +22,9 @@ namespace Example.Ssh
 
         static async Task Main(string[] args)
         {
+            SshClient client = new SshClient();
+            await client.ConnectAsync();
+
             // create the listener
             SshListener listener = new SshListener(new IPEndPoint(IPAddress.Loopback, 1337));
             listener.Start();

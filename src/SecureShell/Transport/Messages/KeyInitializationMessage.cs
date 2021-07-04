@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace SecureShell.Transport.Messages
 {
-    public struct KeyInitializationMessage : IPacketMessage<KeyInitializationMessage>
+    internal struct KeyInitializationMessage : IPacketMessage<KeyInitializationMessage>
     {
         /// <summary>
         /// The first 8 bytes of the cookie.
@@ -64,6 +64,8 @@ namespace SecureShell.Transport.Messages
             
             public OperationStatus Decode(ref KeyInitializationMessage message, ref SequenceReader<byte> reader)
             {
+                reader.Advance(1); // ignore message number
+
                 while (true) {
                     if (_state == State.Cookie) {
                         // we need 16 bytes to read the cookie
@@ -178,11 +180,12 @@ namespace SecureShell.Transport.Messages
                     
                 }
 
-                Span<byte> cookieBytes = writer.GetSpan(16);
-                
-                BitConverter.TryWriteBytes(cookieBytes.Slice(0, 8), message.Cookie1);
-                BitConverter.TryWriteBytes(cookieBytes.Slice(8, 8), message.Cookie2);
-                writer.Advance(16);
+                Span<byte> numAndCookieBytes = writer.GetSpan(17);
+
+                numAndCookieBytes[0] = (byte)MessageNumber.KeyInitialization;
+                BitConverter.TryWriteBytes(numAndCookieBytes.Slice(1, 8), message.Cookie1);
+                BitConverter.TryWriteBytes(numAndCookieBytes.Slice(9, 8), message.Cookie2);
+                writer.Advance(17);
 
                 WriteNamelist(message.KeyExchangeAlgorithms, writer);
                 WriteNamelist(message.ServerHostKeyAlgorithms, writer);
@@ -215,7 +218,8 @@ namespace SecureShell.Transport.Messages
                     + names.Sum(s => Encoding.ASCII.GetByteCount(s))); // contents
             }
 
-            return 16 // cookie
+            return 1 // message number
+                + 16 // cookie
                 + 40 // namelist lengths
                 + GetNamesByteCount(KeyExchangeAlgorithms)
                 + GetNamesByteCount(ServerHostKeyAlgorithms)

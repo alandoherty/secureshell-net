@@ -74,7 +74,6 @@ namespace SecureShell.Transport
             where TMessageDecoder : IMessageDecoder<TMessage>
         {
             SequenceReader<byte> reader = new SequenceReader<byte>(packet.Payload);
-            reader.Advance(1);
             return TryDecode(ref reader, out msg, decoder);
         }
 

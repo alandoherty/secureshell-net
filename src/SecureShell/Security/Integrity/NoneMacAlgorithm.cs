@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SecureShell.Transport.Integrity
+namespace SecureShell.Security.Integrity
 {
     /// <summary>
     /// Represents the `none` algorithim, performs no integrity.

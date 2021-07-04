@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SecureShell
+namespace SecureShell.Transport
 {
     /// <summary>
     /// Defines the peer mode.

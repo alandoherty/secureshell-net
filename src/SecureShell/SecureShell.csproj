@@ -9,7 +9,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Transport\Encryption\" />
+    <Folder Include="Security\Encryption\" />
   </ItemGroup>
 
 </Project>

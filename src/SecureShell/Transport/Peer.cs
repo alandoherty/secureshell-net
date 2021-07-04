@@ -4,21 +4,24 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipelines;
+using System.Linq;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using SecureShell.Transport.Integrity;
+using SecureShell.Security.Hosts;
+using SecureShell.Security.Integrity;
+using SecureShell.Security.KeyExchange;
 using SecureShell.Transport;
 using SecureShell.Transport.Messages;
-using SecureShell.Transport.KeyExchange;
 
-namespace SecureShell
+namespace SecureShell.Transport
 {
     /// <summary>
     /// Represents a SSH2 peer and provides functionality to read/write packets. It handles the SSH Transport state, accepting services and processing data but does not deal with user authentication or other services.
     /// </summary>
-    public class SshPeer
+    public class Peer
     {
         private PeerMode _mode;
         private PeerState _state = PeerState.IdentificationExchange;
@@ -30,7 +33,7 @@ namespace SecureShell
         private MacAlgorithm _localMac = MacAlgorithm.None;
         private MacAlgorithm _remoteMac = MacAlgorithm.None;
         private SshOptions _options = SshOptions.Default;
-        private KeyInitializationMessage _keyInit = default;
+        internal HostKey _hostKey; //TODO: not be internal
 
         private Random _insecureRandom = new Random();
 
@@ -66,24 +69,24 @@ namespace SecureShell
             KeyInitializationMessage outKeyInitMsg = default;
             outKeyInitMsg.Cookie1 = 0;
             outKeyInitMsg.Cookie2 = 0;
-            outKeyInitMsg.KeyExchangeAlgorithms = new List<string>() { "diffie-hellman-group14-sha1" };
+            outKeyInitMsg.KeyExchangeAlgorithms = _options.KeyExchangeAlgorithms.Select(k => k.Name).ToList();
             outKeyInitMsg.ServerHostKeyAlgorithms = new List<string>() { "ssh-rsa" };
-            outKeyInitMsg.EncryptionAlgorithmsClientToServer = new List<string>() { "aes128-ctr" };
-            outKeyInitMsg.EncryptionAlgorithmsServerToClient = new List<string>() { "aes128-ctr" };
-            outKeyInitMsg.MacAlgorithmsClientToServer = new List<string>() { "hmac-sha1" };
-            outKeyInitMsg.MacAlgorithmsServerToClient = new List<string>() { "hmac-sha1" };
-            outKeyInitMsg.CompressionAlgorithmsClientToServer = new List<string>() { "none" };
-            outKeyInitMsg.CompressionAlgorithmsServerToClient = new List<string>() { "none" };
+            outKeyInitMsg.EncryptionAlgorithmsClientToServer = new List<string>() { "aes128-ctr" }; //TODO
+            outKeyInitMsg.EncryptionAlgorithmsServerToClient = new List<string>() { "aes128-ctr" }; //TODO
+            outKeyInitMsg.MacAlgorithmsClientToServer = new List<string>() { "hmac-sha1" }; //TODO
+            outKeyInitMsg.MacAlgorithmsServerToClient = new List<string>() { "hmac-sha1" }; //TODO
+            outKeyInitMsg.CompressionAlgorithmsClientToServer = new List<string>() { "none" }; //TODO
+            outKeyInitMsg.CompressionAlgorithmsServerToClient = new List<string>() { "none" }; //TODO
             outKeyInitMsg.LanguagesClientToServer = new List<string>();
             outKeyInitMsg.LanguagesServerToClient = new List<string>();
 
-            await WritePacketAsync<KeyInitializationMessage, KeyInitializationMessage.Encoder>(MessageNumber.KeyInitialization, outKeyInitMsg)
+            await WritePacketAsync<KeyInitializationMessage, KeyInitializationMessage.Encoder>(outKeyInitMsg)
                 .ConfigureAwait(false);
 
             ExchangeAlgorithm exchangeAlgo = null;
 
             while (true) {
-                var packet = await ReadPacketAsync(); //NOTE: probably cannot be configureawait?
+                var packet = await ReadPacketAsync().ConfigureAwait(false);
 
                 if (!packet.TryGetMessageNumber(out MessageNumber num)) {
                     throw new Exception("The peer sent an invalid message");
@@ -95,13 +98,16 @@ namespace SecureShell
                         throw new InvalidOperationException("The peer sent another key initialization");
                     }
 
-                    if (!packet.TryDecode< KeyInitializationMessage, KeyInitializationMessage.Decoder>(out KeyInitializationMessage keyInitMsg)) {
-                        throw new InvalidDataException("The peer sent an invalid key initialization packet");
+                    using (packet) {
+                        if (!packet.TryDecode<KeyInitializationMessage, KeyInitializationMessage.Decoder>(out KeyInitializationMessage keyInitMsg)) {
+                            throw new InvalidDataException("The peer sent an invalid key initialization packet");
+                        }
                     }
 
-                    packet.Advance();
-
                     exchangeAlgo = new DiffieHellmanGroupExchangeAlgorithm();
+
+                    //TODO: cancellation
+                    await exchangeAlgo.ExchangeAsync(this).ConfigureAwait(false);
                     continue;
                 }
 
@@ -111,7 +117,7 @@ namespace SecureShell
                         throw new InvalidOperationException("The peer sent an exchange packet before key initialization");
                     }
 
-                    await exchangeAlgo.ProcessExchangeAsync(packet).ConfigureAwait(false);
+                    await exchangeAlgo.ProcessExchangeAsync(this, packet).ConfigureAwait(false);
 
                     continue;
                 }
@@ -141,7 +147,7 @@ namespace SecureShell
                 CancellationTokenSource timeoutTokenSource =
                     new CancellationTokenSource(_options.IdentificationExchangeTimeout.Value);
                 timeoutRegistration = timeoutTokenSource.Token.Register((o) => {
-                    ((SshPeer) o).Dispose(new TimeoutException("Timeout while exchanging identification lines"));
+                    ((Peer) o).Dispose(new TimeoutException("Timeout while exchanging identification lines"));
                 }, this);
             }
             
@@ -341,7 +347,7 @@ namespace SecureShell
         /// <returns>The packet, SHOULD be advanced before reading next packet.</returns>
         public async ValueTask<IncomingPacket> ReadPacketAsync(CancellationToken cancellationToken = default)
         {
-            static (bool Done, IncomingPacket Packet, SequencePosition Examined) Process(SshPeer peer, ReadOnlySequence<byte> buffer)
+            static (bool Done, IncomingPacket Packet, SequencePosition Examined) Process(Peer peer, ReadOnlySequence<byte> buffer)
             {
                 //TODO: handle encryption
                 SequenceReader<byte> reader = new SequenceReader<byte>(buffer);
@@ -394,66 +400,16 @@ namespace SecureShell
         }
 
         /// <summary>
-        /// Reads and discards the specified amount of bytes.
-        /// </summary>
-        /// <param name="count">The count.</param>
-        /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns></returns>
-        public async ValueTask AdvanceAsync(int count, CancellationToken cancellationToken = default)
-        {
-            int remainingCount = count;
-
-            while (true) {
-                // if closing/closed we are completing/completed
-                if (_state == PeerState.Closing || _state == PeerState.Closed)
-                    throw new NotImplementedException(); //TODO
-
-                ReadResult readResult = await _reader.ReadAsync().ConfigureAwait(false);
-
-                // try and "consume" the bytes
-                int currentConsume = Math.Min((int)readResult.Buffer.Length, remainingCount);
-
-                if (currentConsume > 0) {
-                    _reader.AdvanceTo(readResult.Buffer.GetPosition(currentConsume, readResult.Buffer.Start));
-                    remainingCount -= currentConsume;
-                }
-
-                if (remainingCount == 0)
-                    break;
-
-                // if completed we need to bubble up after processing
-                if (readResult.IsCompleted)
-                    throw new NotImplementedException(); //TODO
-            }
-        }
-
-        /// <summary>
-        /// Writes a header to the peer, does not flush the writer.
-        /// </summary>
-        /// <param name="header">The packet header.</param>
-        /// <returns></returns>
-        private void WriteHeader(PacketHeader header)
-        {
-            Span<byte> bytes = _writer.GetSpan(PacketHeader.Size);
-
-            if (!header.TryWriteBytes(bytes))
-                throw new Exception("Failed to write header to buffer");
-
-            _writer.Advance(5);
-        }
-
-        /// <summary>
         /// Writes a packet to the peer without specifying a encoder type, this will result in additional allocations.
         /// </summary>
         /// <typeparam name="TMessage">The message.</typeparam>
-        /// <param name="num">The message number.</param>
         /// <param name="message">The message.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns></returns>
-        public ValueTask WritePacketAsync<TMessage>(MessageNumber num, TMessage message, CancellationToken cancellationToken = default)
+        public ValueTask WritePacketAsync<TMessage>(TMessage message, CancellationToken cancellationToken = default)
             where TMessage: IPacketMessage<TMessage>
         {
-            return WritePacketAsync(num, message, message.CreateEncoder(), cancellationToken);
+            return WritePacketAsync(message, message.CreateEncoder(), cancellationToken);
         }
 
         /// <summary>
@@ -461,21 +417,19 @@ namespace SecureShell
         /// </summary>
         /// <typeparam name="TMessage">The message.</typeparam>
         /// <typeparam name="TMessageEncoder">The encoder.</typeparam>
-        /// <param name="num">The message number.</param>
         /// <param name="message">The message.</param>
         /// <param name="encoder">The encoder.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns></returns>
-        public async ValueTask WritePacketAsync<TMessage, TMessageEncoder>(MessageNumber num, TMessage message, TMessageEncoder encoder = default, CancellationToken cancellationToken = default)
+        public async ValueTask WritePacketAsync<TMessage, TMessageEncoder>(TMessage message, TMessageEncoder encoder = default, CancellationToken cancellationToken = default)
             where TMessage : IPacketMessage<TMessage>
             where TMessageEncoder : IMessageEncoder<TMessage>
         {
-            static void WriteHeaderAndMessageNumber(IBufferWriter<byte> writer, PacketHeader header, MessageNumber num)
+            static void WriteHeader(IBufferWriter<byte> writer, PacketHeader header)
             {
-                Span<byte> bytes = writer.GetSpan(PacketHeader.Size + 1);
-                header.TryWriteBytes(bytes.Slice(0, 5));
-                bytes[5] = (byte)num;
-                writer.Advance(PacketHeader.Size + 1);
+                Span<byte> bytes = writer.GetSpan(PacketHeader.Size);
+                header.TryWriteBytes(bytes);
+                writer.Advance(PacketHeader.Size);
             }
             
             static void WritePadding(IBufferWriter<byte> writer, Random random, int count)
@@ -488,7 +442,7 @@ namespace SecureShell
             }
 
             // calculate lengths
-            uint messageLength = message.GetByteCount() + 1; // message length also includes our prepended message number
+            uint messageLength = message.GetByteCount(); // message length, includes the message number already
             uint paddingLength = (byte)(8 - ((messageLength + 1 + 4) % 8)); // padding is entire packet in block of 8
 
             //TODO: the packet length must be at least 16 bytes
@@ -504,9 +458,9 @@ namespace SecureShell
                 PaddingLength = (byte)paddingLength
             };
 
-            WriteHeaderAndMessageNumber(_writer, header, num);
+            WriteHeader(_writer, header);
 
-            // encode message
+            // encode message piece by piece
             bool moreData = false;
 
             do {
@@ -541,11 +495,14 @@ namespace SecureShell
             _state = PeerState.Closed;
         }
 
-        internal SshPeer(PeerMode mode, PipeReader pipeReader, PipeWriter pipeWriter)
+        internal Peer(PeerMode mode, PipeReader pipeReader, PipeWriter pipeWriter)
         {
             _reader = pipeReader;
             _mode = mode;
             _writer = pipeWriter;
+
+            //TODO: get key store elsewhere
+            _hostKey = new RsaHostKey(RSA.Create(2048));
         }
     }
 }

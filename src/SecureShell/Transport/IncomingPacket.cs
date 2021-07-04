@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace SecureShell.Transport
 {
     /// <summary>
-    /// Represents a packet that has been read into internal buffers in a <see cref="SshPeer"/>. 
+    /// Represents a packet that has been read into internal buffers in a <see cref="SecureShell.Peer"/>. 
     /// </summary>
     public struct IncomingPacket : IDisposable
     {
@@ -37,7 +37,7 @@ namespace SecureShell.Transport
         /// <summary>
         /// The peer which received the packet.
         /// </summary>
-        public readonly SshPeer Peer { get; }
+        public readonly Peer Peer { get; }
 
         /// <summary>
         /// Advances the peer past the packet, any decoded messages will reference invalid buffers once called. Use 
@@ -64,6 +64,22 @@ namespace SecureShell.Transport
         }
 
         /// <summary>
+        /// Creates a <see cref="MemoryPacket>"/>, copying data into the provided buffer. This can be used to extend the lifetime
+        /// of a packet, you must still call <see cref="Advance"/> to move the reader forward.
+        /// </summary>
+        /// <param name="buffer">The destination buffer.</param>
+        /// <returns>The memory packet.</returns>
+        public MemoryPacket ToMemoryPacket(Memory<byte> buffer)
+        {
+            if (buffer.Length < Payload.Length) {
+                throw new ArgumentOutOfRangeException(nameof(buffer), "The provided buffer is not large enough for the packet payload");
+            }
+
+            Payload.CopyTo(buffer.Span);
+            return new MemoryPacket(Header, buffer.Slice(0, (int)Payload.Length));
+        }
+
+        /// <summary>
         /// Advances the packet, see <see cref="Advance"/>.
         /// </summary>
         public void Dispose()
@@ -71,7 +87,7 @@ namespace SecureShell.Transport
             Advance();
         }
 
-        internal IncomingPacket(PacketHeader header, ReadOnlySequence<byte> payload, SshPeer peer, SequencePosition advanceTo)
+        internal IncomingPacket(PacketHeader header, ReadOnlySequence<byte> payload, Peer peer, SequencePosition advanceTo)
         {
             Header = header;
             _payload = payload;

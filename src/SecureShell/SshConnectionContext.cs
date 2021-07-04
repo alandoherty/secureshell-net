@@ -1,4 +1,5 @@
-﻿using System;
+﻿using SecureShell.Transport;
+using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Text;
@@ -44,30 +45,26 @@ namespace SecureShell
         /// <summary>
         /// Gets the connection by performing version exchange and initial key exchange.
         /// </summary>
-        /// <param name="progress">A handler for progress, will emit <see cref="PeerState.IdentificationExchange"/>, <see cref="PeerState.KeyExchange"/> and <see cref="PeerState.Open"/>.</param>
         /// <returns></returns>
-        public ValueTask<SshConnection> GetConnectionAsync(IProgress<PeerState> progress = null)
+        public ValueTask<SshConnection> GetConnectionAsync()
         {
-            return GetConnectionAsync(SshIdentification.Default, progress);
+            return GetConnectionAsync(SshIdentification.Default);
         }
 
         /// <summary>
         /// Gets the connection by performing version exchange and initial key exchange.
         /// </summary>
         /// <param name="identification">The identification.</param>
-        /// <param name="progress">A handler for progress, will emit <see cref="PeerState.IdentificationExchange"/>, <see cref="PeerState.KeyExchange"/> and <see cref="PeerState.Open"/>.</param>
         /// <returns></returns>
-        public async ValueTask<SshConnection> GetConnectionAsync(SshIdentification identification, IProgress<PeerState> progress = null)
+        public async ValueTask<SshConnection> GetConnectionAsync(SshIdentification identification)
         {
             if (_connection == null)
                 throw new InvalidOperationException("The connection context is invalid");
 
             // identification exchange
-            progress.Report(PeerState.IdentificationExchange);
             await _connection.ExchangeIdentificationAsync(identification);
 
             //TODO: exchange keys
-            progress.Report(PeerState.KeyExchange);
             await _connection.ExchangeKeysAsync();
             throw new NotImplementedException();
         }

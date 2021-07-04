@@ -16,7 +16,7 @@ namespace SecureShell.Transport
         where TMessage : IPacketMessage<TMessage>
     {
         /// <summary>
-        /// Encodes part of the message.
+        /// Encodes the message, implementers may choose to request a flush and recall. The message number must be written by the encoder.
         /// </summary>
         /// <param name="message">The message.</param>
         /// <param name="writer">The writer.</param>
