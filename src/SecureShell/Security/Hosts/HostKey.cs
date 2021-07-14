@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
@@ -123,12 +124,10 @@ namespace SecureShell.Security.Hosts
             int offset = 0;
             int nameByteCount = Encoding.ASCII.GetByteCount(Name);
 
-            if (!BitConverter.TryWriteBytes(buffer.Slice(offset, 4), nameByteCount)) {
+            if (!BinaryPrimitives.TryWriteInt32BigEndian(buffer.Slice(offset, 4), nameByteCount)) {
                 bytesWritten = offset;
                 return false;
             }
-
-            buffer.Slice(offset, 4).Reverse();
             offset += 4;
 
             if (Encoding.ASCII.GetBytes(Name.AsSpan(), buffer.Slice(offset, nameByteCount)) != nameByteCount) {

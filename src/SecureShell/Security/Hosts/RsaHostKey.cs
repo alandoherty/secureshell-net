@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Security.Cryptography;
@@ -8,8 +9,9 @@ namespace SecureShell.Security.Hosts
 {
     public sealed class RsaHostKey : HostKey
     {
-        private RSAParameters? _rsaParams;
         private RSA _rsa;
+        private BigInteger _exponent;
+        private BigInteger _modulus;
 
         /// <summary>
         /// Gets the RSA object associated with this host algorithm.
@@ -46,13 +48,6 @@ namespace SecureShell.Security.Hosts
             });
         }
 
-        private void EnsureParameters()
-        {
-            if (_rsaParams == null) {
-                _rsaParams = _rsa.ExportParameters(false);
-            }
-        }
-
         /// <inheritdoc/>
         protected override bool TryWritePayloadBytes(Span<byte> buffer, out int bytesWritten)
         {
@@ -61,22 +56,26 @@ namespace SecureShell.Security.Hosts
                 return false;
             }
 
-            EnsureParameters();
-
             int offset = 0;
-            BitConverter.TryWriteBytes(buffer.Slice(offset, 4), _rsaParams.Value.Exponent.Length);
-            buffer.Slice(offset, 4).Reverse();
+
+            // exponent
+            BinaryPrimitives.TryWriteInt32BigEndian(buffer.Slice(offset, 4), _exponent.GetByteCount());
             offset += 4;
 
-            _rsaParams.Value.Exponent.AsSpan().CopyTo(buffer.Slice(offset, _rsaParams.Value.Exponent.Length));
-            offset += _rsaParams.Value.Exponent.Length;
+            _exponent.TryWriteBytes(buffer.Slice(offset, _exponent.GetByteCount()), out int bnumBytesWritten, false, true);
+            offset += bnumBytesWritten;
 
-            BitConverter.TryWriteBytes(buffer.Slice(offset, 4), _rsaParams.Value.Modulus.Length);
-            buffer.Slice(offset, 4).Reverse();
+            // modulus
+            BinaryPrimitives.TryWriteInt32BigEndian(buffer.Slice(offset, 4), _modulus.GetByteCount() + (_modulus.Sign == -1 ? 1 : 0));
             offset += 4;
 
-            _rsaParams.Value.Modulus.AsSpan().CopyTo(buffer.Slice(offset, _rsaParams.Value.Modulus.Length));
-            offset += _rsaParams.Value.Modulus.Length;
+            // for negative modulus we prepend a zero byte, resulting in MSB being zero flipping sign
+            if (_modulus.Sign == -1) {
+                buffer[offset++] = 0;
+            }
+
+            _modulus.TryWriteBytes(buffer.Slice(offset, _modulus.GetByteCount()), out bnumBytesWritten, false, true);
+            offset += bnumBytesWritten;
 
             bytesWritten = offset;
             return true;
@@ -85,9 +84,10 @@ namespace SecureShell.Security.Hosts
         /// <inheritdoc/>
         protected override int GetPayloadByteCount()
         {
-            EnsureParameters();
-
-            return 8 + _rsaParams.Value.Exponent.Length + _rsaParams.Value.Modulus.Length;
+            return 8 
+                + _exponent.GetByteCount()
+                + (_modulus.Sign == -1 ? 1 : 0)
+                + _modulus.GetByteCount();
         }
 
         /// <inheritdoc/>
@@ -104,15 +104,11 @@ namespace SecureShell.Security.Hosts
                 return false;
             }
 
-            BitConverter.TryWriteBytes(buffer.Slice(0, 4), _rsa.KeySize / 8);
-            buffer.Slice(0, 4).Reverse();
-
-            if (!_rsa.TrySignData(bytes, buffer.Slice(4, _rsa.KeySize / 8), hash, RSASignaturePadding.Pkcs1, out int signBytesWritten)) {
+            BinaryPrimitives.TryWriteInt32BigEndian(buffer.Slice(0, 4), _rsa.KeySize / 8);
+            if (!_rsa.TrySignHash(bytes, buffer.Slice(4, _rsa.KeySize / 8), hash, RSASignaturePadding.Pkcs1, out int signBytesWritten)) {
                 bytesWritten = 4;
                 return false;
             }
-
-            buffer.Slice(4, _rsa.KeySize / 8).Reverse();
 
             bytesWritten = 4 + signBytesWritten;
             return true;
@@ -125,6 +121,10 @@ namespace SecureShell.Security.Hosts
         public RsaHostKey(RSA rsa)
         {
             _rsa = rsa;
+
+            var parameters = _rsa.ExportParameters(false);
+            _exponent = new BigInteger(parameters.Exponent);
+            _modulus = new BigInteger(parameters.Modulus);
         }
     }
 }

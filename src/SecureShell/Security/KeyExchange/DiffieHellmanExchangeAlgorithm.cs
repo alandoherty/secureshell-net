@@ -16,6 +16,8 @@ namespace SecureShell.Security.KeyExchange
         private const byte SSH_MSG_KEX_DH_GEX_REQUEST = 34;
         private const byte SSH_MSG_KEX_DH_GEX_GROUP = 31;
 
+        private ExchangeContext _ctx;
+
         /// <inheritdoc/>
         public override string Name => throw new NotImplementedException();
 
@@ -29,10 +31,11 @@ namespace SecureShell.Security.KeyExchange
         private int _groupSize;
 
         /// <inheritdoc/>
-        protected internal override ValueTask ExchangeAsync(Peer peer, CancellationToken cancellationToken = default)
+        protected internal override ValueTask ExchangeAsync(Peer peer, ExchangeContext ctx, CancellationToken cancellationToken = default)
         {
             // reset
             _groupSize = default;
+            _ctx = ctx;
 
             // if client we need to send a request
             //TODO: this

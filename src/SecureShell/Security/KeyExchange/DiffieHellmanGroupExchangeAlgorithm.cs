@@ -2,6 +2,7 @@
 using SecureShell.Transport.Protocol;
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
@@ -19,6 +20,8 @@ namespace SecureShell.Security.KeyExchange
     {
         private const byte SSH_MSG_KEXDH_INIT = 30;
         private const byte SSH_MSG_KEXDH_REPLY = 31;
+
+        private ExchangeContext _ctx;
 
         /// <inheritdoc/>
         public override string Name => "diffie-hellman-group14-sha1";
@@ -65,17 +68,59 @@ namespace SecureShell.Security.KeyExchange
         private BigInteger _serverExponent;
         private BigInteger _sharedSecret;
 
+        private byte[] GetIdentification(in SshIdentification identification)
+        {
+            using (MemoryStream ms = new MemoryStream()) {
+                ms.Write(Encoding.ASCII.GetBytes("SSH-"));
+                ms.Write(Encoding.ASCII.GetBytes(identification.ProtocolVersion));
+                ms.Write(Encoding.ASCII.GetBytes("-"));
+                ms.Write(Encoding.ASCII.GetBytes(identification.SoftwareVersion));
+
+                if (!string.IsNullOrEmpty(identification.Comments)) {
+                    ms.Write(Encoding.ASCII.GetBytes(" "));
+                    ms.Write(Encoding.ASCII.GetBytes(identification.Comments));
+                }
+
+                return ms.ToArray();
+            }
+        }
+
+        private void AppendHashString(IncrementalHash hash, ReadOnlySpan<byte> bytes)
+        {
+            Span<byte> lengthBytes = stackalloc byte[4];
+            BinaryPrimitives.TryWriteInt32BigEndian(lengthBytes, bytes.Length);
+            hash.AppendData(lengthBytes);
+            hash.AppendData(bytes);
+        }
+
+        private byte[] CalculateHash()
+        {
+            using (IncrementalHash incrementalHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1)) {
+                AppendHashString(incrementalHash, GetIdentification(_ctx.ClientIdentification));
+                AppendHashString(incrementalHash, GetIdentification(_ctx.ServerIdentification));
+                AppendHashString(incrementalHash, _ctx.ClientInitPayload.Span);
+                AppendHashString(incrementalHash, _ctx.ServerInitPayload.Span);
+                AppendHashString(incrementalHash, _ctx.Peer._hostKey.ToByteArray());
+                AppendHashString(incrementalHash, _clientExchange.ToByteArray(true, true));
+                AppendHashString(incrementalHash, _serverExchange.ToByteArray(true, true));
+                AppendHashString(incrementalHash, _sharedSecret.ToByteArray(true, true));
+                return incrementalHash.GetHashAndReset();
+            }
+        }
+
         private BigInteger RandomBigInteger(int bits)
         {
             Span<byte> bytes = stackalloc byte[bits / 8 + (((bits % 8) > 0) ? 1 : 0)];
             RandomNumberGenerator.Fill(bytes);
             bytes[bytes.Length - 1] = (byte)(bytes[bytes.Length - 1] & 0x7F);
-            return new BigInteger(bytes, true);
+            return new BigInteger(bytes);
         }
 
         /// <inheritdoc/>
-        protected internal override async ValueTask ExchangeAsync(Peer peer, CancellationToken cancellationToken = default)
+        protected internal override async ValueTask ExchangeAsync(Peer peer, ExchangeContext ctx, CancellationToken cancellationToken = default)
         {
+            _ctx = ctx;
+
             // if client we need to send a request
             //TODO: this
             //TODO: private exponents should be twice key material not always 1024 bits
@@ -87,7 +132,7 @@ namespace SecureShell.Security.KeyExchange
                 } while (_clientExchange < 1 || _clientExchange > (Prime - 1));
 
                 await peer.WritePacketAsync(new InitMessage() {
-                    Exchange = _clientExchange
+                    Exchange = new MessageBuffer<BigInteger>(_clientExchange)
                 }, cancellationToken);
             } else if (peer.Mode == PeerMode.Server) {
                 do {
@@ -107,7 +152,7 @@ namespace SecureShell.Security.KeyExchange
             if ((byte)num == SSH_MSG_KEXDH_INIT) {
                 using (packet) {
                     if (!packet.TryDecode<InitMessage, InitMessage.Decoder>(out InitMessage initMsg)) {
-                        throw new InvalidDataException("The initialisation message is invalid");
+                        throw new InvalidDataException("The initialization message is invalid");
                     }
 
                     int bits = initMsg.Exchange.GetByteCount() * 8;
@@ -115,7 +160,7 @@ namespace SecureShell.Security.KeyExchange
                     if (bits < 2048)
                         throw new InvalidDataException("The client exchange value is of invalid complexity");
 
-                    _clientExchange = initMsg.Exchange;
+                    initMsg.Exchange.Get(out _clientExchange, BufferConverter.BigInteger);
                 }
 
                 // calculate shared secret (secret = clientExchange ^ serverExponent mod prime)
@@ -123,9 +168,9 @@ namespace SecureShell.Security.KeyExchange
 
                 // send reply
                 ReplyMessage replyMsg = default;
-                replyMsg.HostKeyCertificates = peer._hostKey.ToByteArray();
-                replyMsg.Signature = new StringBuffer(peer._hostKey.Sign(Span<byte>.Empty, HashAlgorithmName.SHA1));
-                replyMsg.F = _serverExchange;
+                replyMsg.HostKeyCertificates = new MessageBuffer<ReadOnlyMemory<byte>>(peer._hostKey.ToByteArray().AsMemory());
+                replyMsg.Signature = new MessageBuffer<ReadOnlyMemory<byte>>(peer._hostKey.Sign(CalculateHash(), HashAlgorithmName.SHA1));
+                replyMsg.F = new MessageBuffer<BigInteger>(_serverExchange);
 
                 await peer.WritePacketAsync(replyMsg, cancellationToken);
             } else if ((byte)num == SSH_MSG_KEXDH_REPLY) {
@@ -134,7 +179,7 @@ namespace SecureShell.Security.KeyExchange
                         throw new InvalidDataException("The reply message is invalid");
                     }
 
-                    _serverExchange = replyMsg.F;
+                    replyMsg.F.Get(out _serverExchange, BufferConverter.BigInteger);
                     //TODO: this
                 }
 
@@ -151,9 +196,9 @@ namespace SecureShell.Security.KeyExchange
         #region Messages
         struct ReplyMessage : IPacketMessage<ReplyMessage>
         {
-            public MessageBuffer HostKeyCertificates;
-            public MessageBuffer F;
-            public MessageBuffer Signature;
+            public MessageBuffer<ReadOnlyMemory<byte>> HostKeyCertificates;
+            public MessageBuffer<BigInteger> F;
+            public MessageBuffer<ReadOnlyMemory<byte>> Signature;
 
             public struct Encoder : IMessageEncoder<ReplyMessage>
             {
@@ -162,32 +207,30 @@ namespace SecureShell.Security.KeyExchange
                     int byteCount = (int)message.GetByteCount();
                     Span<byte> bytes = writer.GetSpan(byteCount);
                     int offset = 0;
-                    
+
                     bytes[offset] = SSH_MSG_KEXDH_REPLY; 
                     offset++;
 
-                    // host key certificates
-                    BitConverter.TryWriteBytes(bytes.Slice(offset, 4), message.HostKeyCertificates.GetByteCount());
-                    bytes.Slice(offset, 4).Reverse();
-                    offset += 4;
+                    int hostKeyCertificatesLength = message.HostKeyCertificates.GetByteCount(BufferConverter.ReadOnlyMemory);
+                    int fLength = message.F.GetByteCount(BufferConverter.BigInteger);
+                    int signatureLength = message.Signature.GetByteCount(BufferConverter.ReadOnlyMemory);
 
-                    message.HostKeyCertificates.TryWriteBytes(bytes.Slice(offset), out int bytesWritten);
+                    // host key certificates
+                    BinaryPrimitives.TryWriteInt32BigEndian(bytes.Slice(offset, 4), hostKeyCertificatesLength);
+                    offset += 4;
+                    message.HostKeyCertificates.TryWriteBytes(bytes.Slice(offset), BufferConverter.ReadOnlyMemory, out int bytesWritten);
                     offset += bytesWritten;
 
                     // F
-                    BitConverter.TryWriteBytes(bytes.Slice(offset, 4), (uint)message.F.GetByteCount());
-                    bytes.Slice(offset, 4).Reverse();
+                    BinaryPrimitives.TryWriteInt32BigEndian(bytes.Slice(offset, 4), fLength);
                     offset += 4;
-
-                    message.F.TryWriteBytes(bytes.Slice(offset, message.F.GetByteCount()), out _);
-                    offset += message.F.GetByteCount();
+                    message.F.TryWriteBytes(bytes.Slice(offset, fLength), BufferConverter.BigInteger, out bytesWritten);
+                    offset += bytesWritten;
 
                     // signature
-                    int signatureLength = message.Signature.GetByteCount();
-                    BitConverter.TryWriteBytes(bytes.Slice(offset, 4), (uint)signatureLength);
-                    bytes.Slice(offset, 4).Reverse();
+                    BinaryPrimitives.TryWriteInt32BigEndian(bytes.Slice(offset, 4), signatureLength);
                     offset += 4;
-                    message.Signature.TryWriteBytes(bytes.Slice(offset, signatureLength), out int _);
+                    message.Signature.TryWriteBytes(bytes.Slice(offset, signatureLength), BufferConverter.ReadOnlyMemory, out int _);
 
                     writer.Advance(byteCount);
 
@@ -202,27 +245,22 @@ namespace SecureShell.Security.KeyExchange
                 /// <inheritdoc/>
                 public OperationStatus Decode(ref ReplyMessage message, ref MessageReader reader)
                 {
+                    OperationStatus status;
+
                     //TODO: more checks for validity
                     reader.Advance(1);
-                    int offset = 1;
 
-                    reader.TryReadBigEndian(out int hostKeyLen);
-                    offset += 4;
-                    message.HostKeyCertificates = reader.Sequence.First.Slice(offset, hostKeyLen);
-                    reader.Advance(hostKeyLen);
-                    offset += hostKeyLen;
+                    if ((status = reader.TryReadBuffer(out message.HostKeyCertificates)) != OperationStatus.Done) {
+                        return status;
+                    }
 
-                    reader.TryReadBigEndian(out int fLen);
-                    offset += 4;
-                    message.F = new BigInteger(reader.Sequence.FirstSpan.Slice(offset, fLen), false, true);
-                    reader.Advance(fLen);
-                    offset += fLen;
+                    if ((status = reader.TryReadBuffer(out message.F)) != OperationStatus.Done) {
+                        return status;
+                    }
 
-                    reader.TryReadBigEndian(out int signatureLen);
-                    offset += 4;
-                    message.Signature = new StringBuffer(reader.Sequence.First.Slice(offset, signatureLen));
-                    reader.Advance(signatureLen);
-                    offset += signatureLen;
+                    if ((status = reader.TryReadBuffer(out message.Signature)) != OperationStatus.Done) {
+                        return status;
+                    }
 
                     return OperationStatus.Done;
                 }
@@ -239,29 +277,29 @@ namespace SecureShell.Security.KeyExchange
 
             /// <inheritdoc/>
             public uint GetByteCount() => 1U
-                + 4U + (uint)HostKeyCertificates.GetByteCount()
-                + 4U + (uint)F.GetByteCount()
-                + 4U + (uint)Signature.GetByteCount();
+                + 4U + (uint)HostKeyCertificates.GetByteCount(BufferConverter.ReadOnlyMemory)
+                + 4U + (uint)F.GetByteCount(BufferConverter.BigInteger)
+                + 4U + (uint)Signature.GetByteCount(BufferConverter.ReadOnlyMemory);
         }
         
         struct InitMessage : IPacketMessage<InitMessage>
         {
-            public BigInteger Exchange;
+            public MessageBuffer<BigInteger> Exchange;
 
             public struct Encoder : IMessageEncoder<InitMessage>
             {
                 public bool Encode(in InitMessage message, IBufferWriter<byte> writer)
                 {
-                    int exchangeByteCount = message.Exchange.GetByteCount();
-                    Span<byte> dataBytes = writer.GetSpan(5 + exchangeByteCount);
+                    int messageByteCount = (int)message.GetByteCount();
+                    int exchangeByteCount = message.Exchange.GetByteCount(BufferConverter.BigInteger);
+                    Span<byte> dataBytes = writer.GetSpan(messageByteCount);
 
                     dataBytes[0] = SSH_MSG_KEXDH_INIT;
 
                     // write exchange
-                    BitConverter.TryWriteBytes(dataBytes.Slice(1, 4), exchangeByteCount);
-                    dataBytes.Slice(1, 4).Reverse();
-                    message.Exchange.TryWriteBytes(dataBytes.Slice(5, exchangeByteCount), out _, false, true);
-                    writer.Advance(5 + exchangeByteCount);
+                    BinaryPrimitives.TryWriteInt32BigEndian(dataBytes.Slice(1, 4), exchangeByteCount);
+                    message.Exchange.TryWriteBytes(dataBytes.Slice(5, exchangeByteCount), BufferConverter.BigInteger, out int _);
+                    writer.Advance(messageByteCount);
 
                     return true;
                 }
@@ -271,41 +309,21 @@ namespace SecureShell.Security.KeyExchange
 
             public struct Decoder : IMessageDecoder<InitMessage>
             {
-                private int _exponentByteCount;
-                private bool _exponent;
-
                 /// <inheritdoc/>
                 public OperationStatus Decode(ref InitMessage message, ref MessageReader reader)
                 {
                     reader.Advance(1);
 
-                    //TODO: deny too big exponent
-                    if (!_exponent) {
-                        if (reader.Remaining < 4)
-                            return OperationStatus.NeedMoreData;
-
-                        reader.TryReadBigEndian(out _exponentByteCount);
-                        _exponent = true;
-                    }
-
-                    if (reader.Remaining < _exponentByteCount)
-                        return OperationStatus.NeedMoreData;
-
-                    if (reader.UnreadSpan.Length >= _exponentByteCount) {
-                        message.Exchange = new BigInteger(reader.UnreadSpan.Slice(0, _exponentByteCount), false, true);
-                    } else {
-                        byte[] exponentBytes = new byte[_exponentByteCount];
-                        reader.TryCopyTo(exponentBytes.AsSpan());
-                        message.Exchange = new BigInteger(exponentBytes, false, true);
+                    OperationStatus status;
+                    if ((status = reader.TryReadBuffer(out message.Exchange)) != OperationStatus.Done) {
+                        return status;
                     }
 
                     return OperationStatus.Done;
                 }
 
                 /// <inheritdoc/>
-                public void Reset() {
-                    _exponent = false;
-                }
+                public void Reset() { }
             }
 
             /// <inheritdoc/>
@@ -316,7 +334,7 @@ namespace SecureShell.Security.KeyExchange
 
             /// <inheritdoc/>
             public uint GetByteCount() => 1U // message number
-                + (uint)(4 + Exchange.GetByteCount());
+                + (uint)(4 + Exchange.GetByteCount(BufferConverter.BigInteger));
         }
         #endregion
     }

@@ -47,6 +47,17 @@ namespace SecureShell.Transport.Messages
         public uint Reserved;
 
         /// <summary>
+        /// Generates a random cookie.
+        /// </summary>
+        public void GenerateCookie()
+        {
+            Span<byte> cookieBytes = stackalloc byte[16];
+            RandomNumberGenerator.Fill(cookieBytes);
+            Cookie1 = BitConverter.ToInt64(cookieBytes.Slice(0, 8));
+            Cookie2 = BitConverter.ToInt64(cookieBytes.Slice(8, 8));
+        }
+
+        /// <summary>
         /// The decoder for the key initialization message.
         /// </summary>
         public struct Decoder : IMessageDecoder<KeyInitializationMessage>

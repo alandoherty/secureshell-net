@@ -9,166 +9,96 @@ namespace SecureShell.Transport.Protocol
     /// <summary>
     /// Represents a string/mpint buffer inside a message. This is used to allow zero-copy decoding and single copy encoding of strings into the outgoing buffer.
     /// </summary>
-    public struct MessageBuffer
+    public struct MessageBuffer<T>
     {
-        private ReadOnlySequence<byte> _buffer;
-        private object _obj;
+        private ReadOnlySequence<byte> _sequence;
+        private T _val;
+        private bool _hasVal;
 
         /// <summary>
-        /// Gets the length of the buffers contents.
+        /// Gets the sequence behind this buffer, 
+        /// </summary>
+        public ReadOnlySequence<byte> Sequence => _sequence;
+
+        /// <summary>
+        /// Gets if this buffer has a value within or just represents an undecoded buffer.
+        /// </summary>
+        public bool HasValue => _hasVal;
+
+        /// <summary>
+        /// Gets the number of bytes in the value.
         /// </summary>
         /// <returns>The byte count.</returns>
-        public int GetByteCount()
+        public int GetByteCount(IBufferConverter<T> converter = null)
         {
-            if (_obj == null) {
-                return (int)_buffer.Length;
-            } else {
-                if (_obj is string str) {
-                    return Encoding.UTF8.GetByteCount(str);
-                } else if (_obj is BigInteger bigInt) {
-                    return bigInt.GetByteCount();
-                } else {
-                    throw new NotImplementedException();
-                }
-            }
+            if (!_hasVal)
+                return (int)_sequence.Length;
+
+            if (converter == null)
+                throw new InvalidOperationException("Converter must be provided for buffer with value");
+
+            return converter.GetByteCount(_val);
         }
 
-        /// <summary>
-        /// Gets the buffer as a newly allocated byte array.
-        /// </summary>
-        /// <returns></returns>
-        public byte[] AsByteArray()
+        public OperationStatus TryWriteBytes(Span<byte> buffer, IBufferConverter<T> converter, out int bytesWritten)
         {
-            if (_obj == null) {
-                return _buffer.ToArray();
-            } else {
-                if (_obj is string str) {
-                    return Encoding.UTF8.GetBytes(str);
-                } else if (_obj is BigInteger bigInt) {
-                    return bigInt.ToByteArray();
-                } else {
-                    throw new NotImplementedException();
-                }
-            }
+            if (!_hasVal)
+                throw new InvalidOperationException("The buffer does not contain a value to write");
+
+            return converter.TryEncode(buffer, _val, out bytesWritten);
         }
 
-        /// <summary>
-        /// Get the buffer as a UTF-8 encoded string.
-        /// </summary>
-        /// <returns>The string.</returns>
-        public string AsString()
+        public OperationStatus TryGet(out T val, IBufferConverter<T> converter = null)
         {
-            if (_obj == null) {
-                if (_buffer.Length == 0)
-                    return string.Empty;
-
-                if (_buffer.IsSingleSegment) {
-                    return Encoding.UTF8.GetString(_buffer.FirstSpan);
-                } else {
-                    //TODO: more efficient thing can probably be done here
-                    return Encoding.UTF8.GetString(_buffer.ToArray());
-                }
-            } else {
-                if (_obj is string str) {
-                    return str;
-                } else if (_obj is BigInteger bigInt) {
-                    throw new InvalidOperationException("The buffer represents a big integer and cannot be converted to a string");
-                } else {
-                    throw new NotImplementedException();
-                }
+            if (_hasVal) {
+                val = _val;
+                return OperationStatus.Done;
             }
+
+            if (converter == null)
+                throw new InvalidOperationException("Converter must be provided for buffer without value");
+
+            return converter.TryDecode(Sequence, out val);
         }
 
-        /// <summary>
-        /// Gets the buffer as a BigInteger.
-        /// </summary>
-        /// <param name="isUnsigned">If the big integer is unsigned, default true.</param>
-        /// <param name="isBigEndian">If the big integer is big endian, default true.</param>
-        /// <returns></returns>
-        public BigInteger AsBigInteger(bool isUnsigned = true, bool isBigEndian = true)
+        public void Get(out T val, IBufferConverter<T> converter = null)
         {
-            if (_obj == null) {
-                if (_buffer.Length == 0)
-                    return BigInteger.Zero;
+            OperationStatus status = TryGet(out val, converter);
 
-                if (_buffer.IsSingleSegment) {
-                    return new BigInteger(_buffer.FirstSpan, isUnsigned, isBigEndian);
-                } else {
-                    //TODO: more efficient thing can probably be done here
-                    return new BigInteger(_buffer.ToArray().AsSpan(), isUnsigned, isBigEndian);
-                }
+            if (status == OperationStatus.Done)
+                return;
+
+            if (status == OperationStatus.DestinationTooSmall) {
+                throw new Exception("Converter decode returned DestinationTooSmall");
+            } else if (status == OperationStatus.InvalidData) {
+                throw new Exception("Converter decode returned InvalidData");
+            } else if (status == OperationStatus.NeedMoreData) {
+                throw new Exception("Converter decode returned NeedMoreData");
             } else {
-                if (_obj is string str) {
-                    throw new InvalidOperationException("The buffer represents a string and cannot be converted to a big integer");
-                } else if (_obj is BigInteger bigInt) {
-                    return bigInt;
-                } else {
-                    throw new NotImplementedException();
-                }
-            }
-        }
-
-        /// <summary>
-        /// Try and write bytes to the provided buffer.
-        /// </summary>
-        /// <param name="buffer">The buffer.</param>
-        /// <param name="bytesWritten">The output of bytes written.</param>
-        /// <returns>If any of the buffer was copied.</returns>
-        public bool TryCopyTo(Span<byte> buffer, out int bytesWritten)
-        {
-            if (_obj == null) {
-                if (buffer.Length < _buffer.Length) {
-                    bytesWritten = 0;
-                    return false;
-                }
-
-                _buffer.CopyTo(buffer);
-
-                bytesWritten = (int)_buffer.Length;
-                return true;
-            } else {
-                throw new InvalidOperationException("The buffer contains an object and cannot be written out");
+                throw new Exception("Converter decode returned unexpected error");
             }
         }
 
         /// <summary>
         /// Creates a new message buffer from the memory.
         /// </summary>
-        /// <param name="buffer">The buffer.</param>
-        public MessageBuffer(ReadOnlySequence<byte> buffer)
+        /// <param name="sequence">The sequence.</param>
+        public MessageBuffer(ReadOnlySequence<byte> sequence)
         {
-            _buffer = buffer;
-            _obj = default;
+            _sequence = sequence;
+            _val = default;
+            _hasVal = false;
         }
 
         /// <summary>
-        /// Creates a new message buffer from the memory.
+        /// Creates a new message buffer from a value.
         /// </summary>
-        /// <param name="buffer">The buffer.</param>
-        public MessageBuffer(ReadOnlyMemory<byte> buffer)
+        /// <param name="val">The value.</param>
+        public MessageBuffer(T val)
         {
-            _buffer = new ReadOnlySequence<byte>(buffer);
-            _obj = default;
-        }
-
-        /// <summary>
-        /// Creates a new message buffer from the string.
-        /// </summary>
-        /// <param name="str">The string.</param>
-        public MessageBuffer(string str)
-        {
-            _buffer = new ReadOnlySequence<byte>();
-            _obj = str;
-        }
-
-        /// <summary>
-        /// Creates a new message buffer from the string.
-        /// </summary>
-        /// <param name="bigInteger">The big integer.</param>
-        public MessageBuffer(BigInteger bigInteger)
-        {
-            _buffer = new ReadOnlySequence<byte>();
-            _obj = bigInteger;
+            _sequence = default;
+            _val = val;
+            _hasVal = true;
         }
     }
 }

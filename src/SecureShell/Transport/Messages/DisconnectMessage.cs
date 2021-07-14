@@ -19,12 +19,12 @@ namespace SecureShell.Transport.Messages
         /// <summary>
         /// The description. 
         /// </summary>
-        public MessageBuffer Description;
+        public MessageBuffer<string> Description;
 
         /// <summary>
         /// The language tag as defined by RFC3066.
         /// </summary>
-        public MessageBuffer LanguageTag;
+        public MessageBuffer<string> LanguageTag;
 
         /// <summary>
         /// The decoder for the disconnect message.
@@ -60,7 +60,7 @@ namespace SecureShell.Transport.Messages
 
         /// <inheritdoc/>
         public uint GetByteCount() => (uint)(4
-                + 4 + Description.GetByteCount()
-                + 4 + LanguageTag.GetByteCount());
+                + 4 + Description.GetByteCount(BufferConverter.StringUtf8)
+                + 4 + LanguageTag.GetByteCount(BufferConverter.StringUtf8));
     }
 }

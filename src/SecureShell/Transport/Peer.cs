@@ -33,8 +33,10 @@ namespace SecureShell.Transport
         private SshIdentification _remoteIdentification;
         private MacAlgorithm _localMac = MacAlgorithm.None;
         private MacAlgorithm _remoteMac = MacAlgorithm.None;
-        private SshOptions _options = SshOptions.Default;
+        private SshOptions _options = SshOptions.DefaultInstance;
         internal HostKey _hostKey; //TODO: not be internal
+
+        private ExchangeContext _exchangeContext;
 
         /// <summary>
         /// Gets the peer state.
@@ -66,8 +68,6 @@ namespace SecureShell.Transport
         {
             // encode and flush our message
             KeyInitializationMessage outKeyInitMsg = default;
-            outKeyInitMsg.Cookie1 = 0;
-            outKeyInitMsg.Cookie2 = 0;
             outKeyInitMsg.KeyExchangeAlgorithms = _options.KeyExchangeAlgorithms.Select(k => k.Name).ToList();
             outKeyInitMsg.ServerHostKeyAlgorithms = new List<string>() { "ssh-rsa" };
             outKeyInitMsg.EncryptionAlgorithmsClientToServer = new List<string>() { "aes128-ctr" }; //TODO
@@ -78,6 +78,15 @@ namespace SecureShell.Transport
             outKeyInitMsg.CompressionAlgorithmsServerToClient = new List<string>() { "none" }; //TODO
             outKeyInitMsg.LanguagesClientToServer = new List<string>();
             outKeyInitMsg.LanguagesServerToClient = new List<string>();
+            outKeyInitMsg.GenerateCookie();
+            
+            if (_mode == PeerMode.Client) {
+                _exchangeContext.ClientInitPayload = MessageUtilities.MessageToMemory<KeyInitializationMessage, KeyInitializationMessage.Encoder>(in outKeyInitMsg);
+            } else if (_mode == PeerMode.Server) {
+                _exchangeContext.ServerInitPayload = MessageUtilities.MessageToMemory<KeyInitializationMessage, KeyInitializationMessage.Encoder>(in outKeyInitMsg);
+            } else {
+                throw new NotImplementedException();
+            }
 
             await WritePacketAsync<KeyInitializationMessage, KeyInitializationMessage.Encoder>(outKeyInitMsg)
                 .ConfigureAwait(false);
@@ -101,12 +110,21 @@ namespace SecureShell.Transport
                         if (!packet.TryDecode<KeyInitializationMessage, KeyInitializationMessage.Decoder>(out KeyInitializationMessage keyInitMsg)) {
                             throw new InvalidDataException("The peer sent an invalid key initialization packet");
                         }
+
+                        // depending our peer mode we need to store the received key init for exchange algorithms later
+                        if (_mode == PeerMode.Client) {
+                            _exchangeContext.ServerInitPayload = packet.ToMemoryPacket().Memory;
+                        } else if (_mode == PeerMode.Server) {
+                            _exchangeContext.ClientInitPayload = packet.ToMemoryPacket().Memory;
+                        } else {
+                            throw new NotImplementedException();
+                        }
                     }
 
                     exchangeAlgo = new DiffieHellmanGroupExchangeAlgorithm();
 
                     //TODO: cancellation
-                    await exchangeAlgo.ExchangeAsync(this).ConfigureAwait(false);
+                    await exchangeAlgo.ExchangeAsync(this, _exchangeContext).ConfigureAwait(false);
                     continue;
                 }
 
@@ -174,7 +192,17 @@ namespace SecureShell.Transport
                 Dispose(exception);
                 throw exception;
             }
-            
+
+            if (_mode == PeerMode.Client) {
+                _exchangeContext.ClientIdentification = localIdentification;
+                _exchangeContext.ServerIdentification = remoteIdentification.Value;
+            } else if (_mode == PeerMode.Server) {
+                _exchangeContext.ClientIdentification = remoteIdentification.Value;
+                _exchangeContext.ServerIdentification = localIdentification;
+            } else {
+                throw new NotImplementedException();
+            }
+
             return _remoteIdentification;
         }
 
@@ -301,7 +329,6 @@ namespace SecureShell.Transport
                 }
             }
         }
-        #endregion
 
         private async ValueTask WriteIdentificationAsync(SshIdentification identification)
         {
@@ -338,6 +365,7 @@ namespace SecureShell.Transport
             _writer.Advance(offset);
             await _writer.FlushAsync();
         }
+        #endregion
 
         #region Reading
         /// <summary>
@@ -563,9 +591,20 @@ namespace SecureShell.Transport
             _reader = pipeReader;
             _mode = mode;
             _writer = pipeWriter;
+            _exchangeContext.Peer = this;
 
             //TODO: get key store elsewhere
-            _hostKey = new RsaHostKey(RSA.Create(2048));
+            RSA rsa;
+
+            if (!File.Exists("hostkey")) {
+                rsa = RSA.Create(2048);
+                File.WriteAllBytes("hostkey", rsa.ExportPkcs8PrivateKey());
+            } else {
+                rsa = RSA.Create();
+                rsa.ImportPkcs8PrivateKey(File.ReadAllBytes("hostkey").AsSpan(), out int _);
+            }
+
+            _hostKey = new RsaHostKey(rsa);
         }
     }
 }

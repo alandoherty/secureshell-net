@@ -26,7 +26,7 @@ namespace Example.Ssh
             await client.ConnectAsync();
 
             // create the listener
-            SshListener listener = new SshListener(new IPEndPoint(IPAddress.Loopback, 1337));
+            SshListener listener = new SshListener(new IPEndPoint(IPAddress.Any, 1337));
             listener.Start();
 
             // loop accepting connections

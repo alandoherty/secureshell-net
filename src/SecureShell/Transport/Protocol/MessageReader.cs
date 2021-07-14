@@ -63,7 +63,7 @@ namespace SecureShell.Transport.Protocol
             return Reader.TryRead(out b);
         }
 
-        public OperationStatus TryRead(out MessageBuffer buffer)
+        public OperationStatus TryReadBuffer<T>(out MessageBuffer<T> buffer)
         {
             if (Reader.Remaining < 4) {
                 buffer = default;
@@ -80,7 +80,7 @@ namespace SecureShell.Transport.Protocol
                 return OperationStatus.NeedMoreData;
             }
 
-            buffer = new MessageBuffer(Reader.Sequence.Slice(Reader.Position, length));
+            buffer = new MessageBuffer<T>(Reader.Sequence.Slice(Reader.Position, length));
             Reader.Advance(length);
             return OperationStatus.Done;
         }

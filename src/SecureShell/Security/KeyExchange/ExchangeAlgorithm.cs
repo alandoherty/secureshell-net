@@ -28,9 +28,10 @@ namespace SecureShell.Security.KeyExchange
         /// Called once when an exchange has begun, initialisation logic goes here.
         /// </summary>
         /// <param name="peer">The peer.</param>
+        /// <param name="context">The exchange context.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns></returns>
-        protected internal abstract ValueTask ExchangeAsync(Peer peer, CancellationToken cancellationToken = default);
+        protected internal abstract ValueTask ExchangeAsync(Peer peer, ExchangeContext context, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Called when a message has been received which should be processed. If the packet must be used throughout processing and after reading further
