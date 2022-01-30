@@ -167,9 +167,11 @@ namespace SecureShell.Security.KeyExchange
                 _sharedSecret = BigInteger.ModPow(_clientExchange, _serverExponent, Prime);
 
                 // send reply
+                byte[] signatureData = peer._hostKey.Sign(CalculateHash(), HashAlgorithmName.SHA1);
+
                 ReplyMessage replyMsg = default;
                 replyMsg.HostKeyCertificates = new MessageBuffer<ReadOnlyMemory<byte>>(peer._hostKey.ToByteArray().AsMemory());
-                replyMsg.Signature = new MessageBuffer<ReadOnlyMemory<byte>>(peer._hostKey.Sign(CalculateHash(), HashAlgorithmName.SHA1));
+                replyMsg.Signature = new MessageBuffer<ReadOnlyMemory<byte>>(signatureData);
                 replyMsg.F = new MessageBuffer<BigInteger>(_serverExchange);
 
                 await peer.WritePacketAsync(replyMsg, cancellationToken);
@@ -218,7 +220,7 @@ namespace SecureShell.Security.KeyExchange
                     // host key certificates
                     BinaryPrimitives.TryWriteInt32BigEndian(bytes.Slice(offset, 4), hostKeyCertificatesLength);
                     offset += 4;
-                    message.HostKeyCertificates.TryWriteBytes(bytes.Slice(offset), BufferConverter.ReadOnlyMemory, out int bytesWritten);
+                    message.HostKeyCertificates.TryWriteBytes(bytes.Slice(offset, hostKeyCertificatesLength), BufferConverter.ReadOnlyMemory, out int bytesWritten);
                     offset += bytesWritten;
 
                     // F
@@ -230,8 +232,7 @@ namespace SecureShell.Security.KeyExchange
                     // signature
                     BinaryPrimitives.TryWriteInt32BigEndian(bytes.Slice(offset, 4), signatureLength);
                     offset += 4;
-                    message.Signature.TryWriteBytes(bytes.Slice(offset, signatureLength), BufferConverter.ReadOnlyMemory, out int _);
-
+                    message.Signature.TryWriteBytes(bytes.Slice(offset, signatureLength), BufferConverter.ReadOnlyMemory, out bytesWritten);
                     writer.Advance(byteCount);
 
                     return true;

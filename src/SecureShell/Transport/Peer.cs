@@ -96,7 +96,11 @@ namespace SecureShell.Transport
             while (true) {
                 var packet = await ReadPacketAsync().ConfigureAwait(false);
 
-                if (!packet.TryGetMessageNumber(out MessageNumber num)) {
+                if (packet == null) {
+                    throw new EndOfStreamException("The end of stream was reached before keys could be exchanged");
+                }
+
+                if (!packet.Value.TryGetMessageNumber(out MessageNumber num)) {
                     throw new Exception("The peer sent an invalid message");
                 }
 
@@ -107,15 +111,15 @@ namespace SecureShell.Transport
                     }
 
                     using (packet) {
-                        if (!packet.TryDecode<KeyInitializationMessage, KeyInitializationMessage.Decoder>(out KeyInitializationMessage keyInitMsg)) {
+                        if (!packet.Value.TryDecode<KeyInitializationMessage, KeyInitializationMessage.Decoder>(out KeyInitializationMessage keyInitMsg)) {
                             throw new InvalidDataException("The peer sent an invalid key initialization packet");
                         }
 
                         // depending our peer mode we need to store the received key init for exchange algorithms later
                         if (_mode == PeerMode.Client) {
-                            _exchangeContext.ServerInitPayload = packet.ToMemoryPacket().Memory;
+                            _exchangeContext.ServerInitPayload = packet.Value.ToMemoryPacket().Memory;
                         } else if (_mode == PeerMode.Server) {
-                            _exchangeContext.ClientInitPayload = packet.ToMemoryPacket().Memory;
+                            _exchangeContext.ClientInitPayload = packet.Value.ToMemoryPacket().Memory;
                         } else {
                             throw new NotImplementedException();
                         }
@@ -134,7 +138,7 @@ namespace SecureShell.Transport
                         throw new InvalidOperationException("The peer sent an exchange packet before key initialization");
                     }
 
-                    await exchangeAlgo.ProcessExchangeAsync(this, packet).ConfigureAwait(false);
+                    await exchangeAlgo.ProcessExchangeAsync(this, packet.Value).ConfigureAwait(false);
 
                     continue;
                 }
@@ -373,7 +377,7 @@ namespace SecureShell.Transport
         /// </summary>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>The packet, SHOULD be advanced before reading next packet.</returns>
-        public async ValueTask<IncomingPacket> ReadPacketAsync(CancellationToken cancellationToken = default)
+        public async ValueTask<IncomingPacket?> ReadPacketAsync(CancellationToken cancellationToken = default)
         {
             static (bool Done, IncomingPacket Packet, SequencePosition Examined) Process(Peer peer, ReadOnlySequence<byte> buffer)
             {
@@ -417,8 +421,9 @@ namespace SecureShell.Transport
                 _reader.AdvanceTo(readResult.Buffer.Start, processResult.Examined);
 
                 // if completed we need to bubble up after processing
-                if (readResult.IsCompleted)
-                    throw new NotImplementedException(); //TODO
+                if (readResult.IsCompleted) {
+                    return null;
+                }
             }
         }
         #endregion

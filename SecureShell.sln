@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.30523.141
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.32014.148
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SecureShell", "src\SecureShell\SecureShell.csproj", "{4E0A4A85-1F6F-4FD3-93FF-D75FE624C9CD}"
 EndProject
@@ -11,9 +11,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Examples", "Examples", "{E5
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{CA39C2DB-431A-48C9-B1E7-2FF44092B00D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests.Protocol", "tests\Tests.Protocol\Tests.Protocol.csproj", "{C2C14DB1-91F7-428B-9D93-2CFFE9B68C9B}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Tests.Protocol", "tests\Tests.Protocol\Tests.Protocol.csproj", "{C2C14DB1-91F7-428B-9D93-2CFFE9B68C9B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Example.SshProxy", "samples\Example.SshProxy\Example.SshProxy.csproj", "{948004CA-686C-473B-BB60-06A1E5E9ADD5}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Example.SshProxy", "samples\Example.SshProxy\Example.SshProxy.csproj", "{948004CA-686C-473B-BB60-06A1E5E9ADD5}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Renci.SshNet", "..\..\SSH.NET-develop\src\Renci.SshNet\Renci.SshNet.csproj", "{6622214E-3417-4EAD-9124-CABEC3111ACF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -37,6 +39,10 @@ Global
 		{948004CA-686C-473B-BB60-06A1E5E9ADD5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{948004CA-686C-473B-BB60-06A1E5E9ADD5}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{948004CA-686C-473B-BB60-06A1E5E9ADD5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6622214E-3417-4EAD-9124-CABEC3111ACF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6622214E-3417-4EAD-9124-CABEC3111ACF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6622214E-3417-4EAD-9124-CABEC3111ACF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6622214E-3417-4EAD-9124-CABEC3111ACF}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -44,7 +44,7 @@ namespace SecureShell.Security.Hosts
         /// <param name="bytes">The input bytes.</param>
         /// <param name="hash">The hash algorithm.</param>
         /// <returns>The byte count.</returns>
-        protected abstract int GetSignaturePayloadByteCount(Span<byte> bytes, HashAlgorithmName hash);
+        protected abstract int GetSignaturePayloadByteCount(ReadOnlySpan<byte> bytes, HashAlgorithmName hash);
 
         /// <summary>
         /// Gets the byte count of a complete signature.
@@ -52,7 +52,7 @@ namespace SecureShell.Security.Hosts
         /// <param name="bytes">The input bytes.</param>
         /// <param name="hash">The hash algorithm.</param>
         /// <returns>The signature.</returns>
-        public virtual int GetSignatureByteCount(Span<byte> bytes, HashAlgorithmName hash) => 4
+        public virtual int GetSignatureByteCount(ReadOnlySpan<byte> bytes, HashAlgorithmName hash) => 4
             + Encoding.ASCII.GetByteCount(Name)
             + GetSignaturePayloadByteCount(bytes, hash);
 
@@ -104,7 +104,7 @@ namespace SecureShell.Security.Hosts
         /// <param name="buffer">The output buffer.</param>
         /// <param name="bytesWritten">The bytes written.</param>
         /// <returns>If the signature had enough bytes to be written.</returns>
-        protected abstract bool TrySignPayload(Span<byte> bytes, HashAlgorithmName hash, Span<byte> buffer, out int bytesWritten);
+        protected abstract bool TrySignPayload(ReadOnlySpan<byte> bytes, HashAlgorithmName hash, Span<byte> buffer, out int bytesWritten);
 
         /// <summary>
         /// Try and sign the provided bytes with the specified hash into the provided buffer.
@@ -114,7 +114,7 @@ namespace SecureShell.Security.Hosts
         /// <param name="buffer">The output buffer.</param>
         /// <param name="bytesWritten">The bytes written.</param>
         /// <returns>If the signature had enough bytes to be written.</returns>
-        public virtual bool TrySign(Span<byte> bytes, HashAlgorithmName hash, Span<byte> buffer, out int bytesWritten)
+        public virtual bool TrySign(ReadOnlySpan<byte> bytes, HashAlgorithmName hash, Span<byte> buffer, out int bytesWritten)
         {
             if (buffer.Length < GetSignatureByteCount(bytes, hash)) {
                 bytesWritten = 0;
@@ -151,7 +151,7 @@ namespace SecureShell.Security.Hosts
         /// </summary>
         /// <param name="bytes">The bytes to be signed.</param>
         /// <param name="hash">The hash algorithm to use.</param>
-        public byte[] Sign(Span<byte> bytes, HashAlgorithmName hash)
+        public byte[] Sign(ReadOnlySpan<byte> bytes, HashAlgorithmName hash)
         {
             byte[] arr = new byte[GetSignatureByteCount(bytes, hash)];
 

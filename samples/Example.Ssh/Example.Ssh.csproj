@@ -2,10 +2,11 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\..\SSH.NET-develop\src\Renci.SshNet\Renci.SshNet.csproj" />
     <ProjectReference Include="..\..\src\SecureShell\SecureShell.csproj" />
   </ItemGroup>
 

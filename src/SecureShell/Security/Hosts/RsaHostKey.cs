@@ -91,13 +91,13 @@ namespace SecureShell.Security.Hosts
         }
 
         /// <inheritdoc/>
-        protected override int GetSignaturePayloadByteCount(Span<byte> bytes, HashAlgorithmName hash)
+        protected override int GetSignaturePayloadByteCount(ReadOnlySpan<byte> bytes, HashAlgorithmName hash)
         {
             return (_rsa.KeySize / 8) + 4;
         }
 
         /// <inheritdoc/>
-        protected override bool TrySignPayload(Span<byte> bytes, HashAlgorithmName hash, Span<byte> buffer, out int bytesWritten)
+        protected override bool TrySignPayload(ReadOnlySpan<byte> bytes, HashAlgorithmName hash, Span<byte> buffer, out int bytesWritten)
         {
             if (buffer.Length < GetSignaturePayloadByteCount(bytes, hash)) {
                 bytesWritten = 0;
@@ -105,7 +105,7 @@ namespace SecureShell.Security.Hosts
             }
 
             BinaryPrimitives.TryWriteInt32BigEndian(buffer.Slice(0, 4), _rsa.KeySize / 8);
-            if (!_rsa.TrySignHash(bytes, buffer.Slice(4, _rsa.KeySize / 8), hash, RSASignaturePadding.Pkcs1, out int signBytesWritten)) {
+            if (!_rsa.TrySignData(bytes, buffer.Slice(4, _rsa.KeySize / 8), hash, RSASignaturePadding.Pkcs1, out int signBytesWritten)) {
                 bytesWritten = 4;
                 return false;
             }
