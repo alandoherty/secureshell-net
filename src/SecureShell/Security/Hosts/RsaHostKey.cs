@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
+using SecureShell.Transport.Utilities;
 
 namespace SecureShell.Security.Hosts
 {
@@ -59,23 +60,18 @@ namespace SecureShell.Security.Hosts
             int offset = 0;
 
             // exponent
-            BinaryPrimitives.TryWriteInt32BigEndian(buffer.Slice(offset, 4), _exponent.GetByteCount());
+            BinaryPrimitives.TryWriteInt32BigEndian(buffer.Slice(offset, 4), MpInteger.GetByteCount(_exponent));
             offset += 4;
 
-            _exponent.TryWriteBytes(buffer.Slice(offset, _exponent.GetByteCount()), out int bnumBytesWritten, false, true);
-            offset += bnumBytesWritten;
+            MpInteger.TryWriteBytes(_exponent, buffer.Slice(offset, MpInteger.GetByteCount(_exponent)), out bytesWritten);
+            offset += bytesWritten;
 
             // modulus
-            BinaryPrimitives.TryWriteInt32BigEndian(buffer.Slice(offset, 4), _modulus.GetByteCount() + (_modulus.Sign == -1 ? 1 : 0));
+            BinaryPrimitives.TryWriteInt32BigEndian(buffer.Slice(offset, 4), MpInteger.GetByteCount(_modulus));
             offset += 4;
 
-            // for negative modulus we prepend a zero byte, resulting in MSB being zero flipping sign
-            if (_modulus.Sign == -1) {
-                buffer[offset++] = 0;
-            }
-
-            _modulus.TryWriteBytes(buffer.Slice(offset, _modulus.GetByteCount()), out bnumBytesWritten, false, true);
-            offset += bnumBytesWritten;
+            MpInteger.TryWriteBytes(_modulus, buffer.Slice(offset, MpInteger.GetByteCount(_modulus)), out bytesWritten);
+            offset += bytesWritten;
 
             bytesWritten = offset;
             return true;
@@ -84,10 +80,9 @@ namespace SecureShell.Security.Hosts
         /// <inheritdoc/>
         protected override int GetPayloadByteCount()
         {
-            return 8 
-                + _exponent.GetByteCount()
-                + (_modulus.Sign == -1 ? 1 : 0)
-                + _modulus.GetByteCount();
+            return 8
+                   + MpInteger.GetByteCount(_exponent)
+                   + MpInteger.GetByteCount(_modulus);
         }
 
         /// <inheritdoc/>
@@ -120,11 +115,15 @@ namespace SecureShell.Security.Hosts
         /// <param name="rsa">The RSA object.</param>
         public RsaHostKey(RSA rsa)
         {
-            _rsa = rsa;
+            _rsa = rsa ?? throw new ArgumentNullException(nameof(rsa), "The RSA key cannot be null");
+            
+            // We call this, ditching the results to throw an exception if the private key is not available
+            _rsa.ExportParameters(true);
 
+            // Extract the exponent and modulus manually as we need to be able to send it to clients
             var parameters = _rsa.ExportParameters(false);
-            _exponent = new BigInteger(parameters.Exponent);
-            _modulus = new BigInteger(parameters.Modulus);
+            _exponent = new BigInteger(parameters.Exponent, true, true);
+            _modulus = new BigInteger(parameters.Modulus, true, true);
         }
     }
 }

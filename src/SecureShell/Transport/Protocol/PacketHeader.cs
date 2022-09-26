@@ -58,7 +58,7 @@ namespace SecureShell.Transport.Protocol
         /// <param name="buffer">The buffer.</param>
         /// <remarks>The buffer must be at least 5 bytes.</remarks>
         /// <returns></returns>
-        public bool TryWriteBytes(Span<byte> buffer)
+        public readonly bool TryWriteBytes(Span<byte> buffer)
         {
             if (buffer.Length < Size)
                 return false;
@@ -81,7 +81,7 @@ namespace SecureShell.Transport.Protocol
         /// </summary>
         /// <param name="writer">The writer.</param>
         /// <returns>If the header was written successfully.</returns>
-        public bool TryWrite(IBufferWriter<byte> writer)
+        public readonly bool TryWrite(IBufferWriter<byte> writer)
         {
             Span<byte> headerBytes = writer.GetSpan(Size);
 

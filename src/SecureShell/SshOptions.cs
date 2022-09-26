@@ -39,6 +39,9 @@ namespace SecureShell
         /// </summary>
         internal int MaximumPacketSize { get; set; } = 131072;
 
+        /// <summary>
+        /// Validate that the options are not invalid, throwing an exception if not.
+        /// </summary>
         internal void ThrowIfInvalid()
         {
             if (MaximumPacketSize < 35000)

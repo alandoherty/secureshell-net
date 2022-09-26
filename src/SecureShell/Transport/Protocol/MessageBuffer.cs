@@ -18,18 +18,18 @@ namespace SecureShell.Transport.Protocol
         /// <summary>
         /// Gets the sequence behind this buffer, 
         /// </summary>
-        public ReadOnlySequence<byte> Sequence => _sequence;
+        public readonly ReadOnlySequence<byte> Sequence => _sequence;
 
         /// <summary>
         /// Gets if this buffer has a value within or just represents an undecoded buffer.
         /// </summary>
-        public bool HasValue => _hasVal;
+        public readonly bool HasValue => _hasVal;
 
         /// <summary>
         /// Gets the number of bytes in the value.
         /// </summary>
         /// <returns>The byte count.</returns>
-        public int GetByteCount(IBufferConverter<T> converter = null)
+        public readonly int GetByteCount(IBufferConverter<T> converter = null)
         {
             if (!_hasVal)
                 return (int)_sequence.Length;
@@ -40,7 +40,7 @@ namespace SecureShell.Transport.Protocol
             return converter.GetByteCount(_val);
         }
 
-        public OperationStatus TryWriteBytes(Span<byte> buffer, IBufferConverter<T> converter, out int bytesWritten)
+        public readonly OperationStatus TryWriteBytes(Span<byte> buffer, IBufferConverter<T> converter, out int bytesWritten)
         {
             if (!_hasVal)
                 throw new InvalidOperationException("The buffer does not contain a value to write");
@@ -48,7 +48,7 @@ namespace SecureShell.Transport.Protocol
             return converter.TryEncode(buffer, _val, out bytesWritten);
         }
 
-        public OperationStatus TryGet(out T val, IBufferConverter<T> converter = null)
+        public readonly OperationStatus TryGet(out T val, IBufferConverter<T> converter = null)
         {
             if (_hasVal) {
                 val = _val;
@@ -61,7 +61,7 @@ namespace SecureShell.Transport.Protocol
             return converter.TryDecode(Sequence, out val);
         }
 
-        public void Get(out T val, IBufferConverter<T> converter = null)
+        public readonly void Get(out T val, IBufferConverter<T> converter = null)
         {
             OperationStatus status = TryGet(out val, converter);
 

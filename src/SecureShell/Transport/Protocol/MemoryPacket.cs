@@ -6,7 +6,7 @@ using System.Text;
 namespace SecureShell.Transport.Protocol
 {
     /// <summary>
-    /// Represents a packet that has been moved into seperate memory.
+    /// Represents a packet that has been moved into separate memory.
     /// </summary>
     public readonly struct MemoryPacket
     {
@@ -21,7 +21,7 @@ namespace SecureShell.Transport.Protocol
         public readonly ReadOnlySequence<byte> Payload;
 
         /// <summary>
-        /// The memory that backs this 
+        /// The memory that backs this packet.
         /// </summary>
         public readonly Memory<byte> Memory;
 

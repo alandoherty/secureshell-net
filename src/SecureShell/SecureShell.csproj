@@ -1,15 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.1;net6.0</TargetFrameworks>
+    <TargetFramework>net6.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="System.IO.Pipelines" Version="5.0.1" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Security\Encryption\" />
   </ItemGroup>
 
 </Project>

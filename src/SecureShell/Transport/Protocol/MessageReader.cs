@@ -41,7 +41,7 @@ namespace SecureShell.Transport.Protocol
         /// <summary>
         /// Try and read a byte from the message.
         /// </summary>
-        /// <param name="value">The value.</param>
+        /// <param name="val">The value.</param>
         /// <returns>If the value was read.</returns>
         public bool TryRead(out int val)
         {
@@ -51,7 +51,7 @@ namespace SecureShell.Transport.Protocol
         /// <summary>
         /// Try and read a byte from the message.
         /// </summary>
-        /// <param name="value">The value.</param>
+        /// <param name="val">The value.</param>
         /// <returns>If the value was read.</returns>
         public bool TryRead(out long val)
         {

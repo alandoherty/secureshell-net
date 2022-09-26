@@ -35,6 +35,7 @@ namespace SecureShell.Transport.Messages
             public OperationStatus Decode(ref DisconnectMessage message, ref MessageReader reader)
             {
                 reader.Advance(1);
+                
                 throw new NotImplementedException();
             }
 
@@ -53,14 +54,14 @@ namespace SecureShell.Transport.Messages
         }
 
         /// <inheritdoc/>
-        public IMessageDecoder<DisconnectMessage> CreateDecoder() => new Decoder();
+        public readonly IMessageDecoder<DisconnectMessage> CreateDecoder() => new Decoder();
 
         /// <inheritdoc/>
-        public IMessageEncoder<DisconnectMessage> CreateEncoder() => throw new NotImplementedException();
+        public readonly IMessageEncoder<DisconnectMessage> CreateEncoder() => throw new NotImplementedException();
 
         /// <inheritdoc/>
-        public uint GetByteCount() => (uint)(4
-                + 4 + Description.GetByteCount(BufferConverter.StringUtf8)
-                + 4 + LanguageTag.GetByteCount(BufferConverter.StringUtf8));
+        public readonly uint GetByteCount() => (uint)(4
+                                                      + 4 + Description.GetByteCount(BufferConverter.StringUtf8)
+                                                      + 4 + LanguageTag.GetByteCount(BufferConverter.StringUtf8));
     }
 }

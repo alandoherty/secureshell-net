@@ -11,11 +11,15 @@ namespace Example.Ssh
         static async Task ClientAsync()
         {
             while (true) {
+                try {
 
-                await Task.Delay(1000);
+                    await Task.Delay(500);
 
-                Renci.SshNet.SshClient sshClient = new Renci.SshNet.SshClient("127.0.0.1", 1337, "alan", "potato");
-                await sshClient.ConnectAsync(default);
+                    Renci.SshNet.SshClient sshClient = new Renci.SshNet.SshClient("127.0.0.1", 1337, "alan", "potato");
+                    await sshClient.ConnectAsync(default);
+                } catch (Exception ex) {
+                    Console.Error.WriteLine(ex.Message);
+                }
             }
         }
 
@@ -35,8 +39,9 @@ namespace Example.Ssh
         {
             //SshClient client = new SshClient();
             //await client.ConnectAsync();
-            Task clientTask = ClientAsync();
-            await clientTask;
+            //Task clientTask = ClientAsync();
+            //await clientTask;
+            
             // create the listener
             SshListener listener = new SshListener(new IPEndPoint(IPAddress.Any, 1337));
             listener.Start();
@@ -45,11 +50,13 @@ namespace Example.Ssh
             while(true) {
                 Task<SshConnectionContext> acceptTask = listener.AcceptAsync();
 
+                _ = AcceptAsync(await acceptTask);
+                /*
                 if (await Task.WhenAny(clientTask, acceptTask) == acceptTask) {
                     _ = AcceptAsync(await acceptTask);
                 } else {
                     await clientTask;
-                }
+                }*/
             }
         }
     }

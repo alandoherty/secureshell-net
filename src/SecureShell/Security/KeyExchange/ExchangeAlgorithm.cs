@@ -31,7 +31,7 @@ namespace SecureShell.Security.KeyExchange
         /// <param name="context">The exchange context.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns></returns>
-        protected internal abstract ValueTask ExchangeAsync(Peer peer, ExchangeContext context, CancellationToken cancellationToken = default);
+        protected internal abstract ValueTask StartAsync(Peer peer, ExchangeContext context, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Called when a message has been received which should be processed. If the packet must be used throughout processing and after reading further
@@ -41,7 +41,7 @@ namespace SecureShell.Security.KeyExchange
         /// <param name="peer">The peer.</param>
         /// <param name="packet">The packet.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>If the exchange was completed.</returns>
-        protected internal abstract ValueTask<bool> ProcessExchangeAsync(Peer peer, IncomingPacket packet, CancellationToken cancellationToken = default);
+        /// <returns>The exchange completion output, or null.</returns>
+        protected internal abstract ValueTask<ExchangeOutput> ProcessAsync(Peer peer, IncomingPacket packet, CancellationToken cancellationToken = default);
     }
 }

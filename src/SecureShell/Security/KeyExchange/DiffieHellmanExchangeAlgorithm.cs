@@ -31,7 +31,7 @@ namespace SecureShell.Security.KeyExchange
         private int _groupSize;
 
         /// <inheritdoc/>
-        protected internal override ValueTask ExchangeAsync(Peer peer, ExchangeContext ctx, CancellationToken cancellationToken = default)
+        protected internal override ValueTask StartAsync(Peer peer, ExchangeContext ctx, CancellationToken cancellationToken = default)
         {
             // reset
             _groupSize = default;
@@ -43,7 +43,7 @@ namespace SecureShell.Security.KeyExchange
         }
 
         /// <inheritdoc/>
-        protected internal override async ValueTask<bool> ProcessExchangeAsync(Peer peer, IncomingPacket packet, CancellationToken cancellationToken)
+        protected internal override async ValueTask<ExchangeOutput> ProcessAsync(Peer peer, IncomingPacket packet, CancellationToken cancellationToken = default)
         {
             packet.TryGetMessageNumber(out MessageNumber num);
 
@@ -68,7 +68,7 @@ namespace SecureShell.Security.KeyExchange
                 throw new NotImplementedException();
             }
 
-            return false;
+            return null;
         }
         #endregion
 
@@ -185,13 +185,13 @@ namespace SecureShell.Security.KeyExchange
             }
 
             /// <inheritdoc/>
-            public IMessageDecoder<GroupExchangeMessage> CreateDecoder() => new Decoder();
+            public readonly IMessageDecoder<GroupExchangeMessage> CreateDecoder() => new Decoder();
 
             /// <inheritdoc/>
-            public IMessageEncoder<GroupExchangeMessage> CreateEncoder() => new Encoder();
+            public readonly IMessageEncoder<GroupExchangeMessage> CreateEncoder() => new Encoder();
 
             /// <inheritdoc/>
-            public uint GetByteCount() => (uint)(8 + Prime.GetByteCount() + Generator.GetByteCount());
+            public readonly uint GetByteCount() => (uint)(8 + Prime.GetByteCount() + Generator.GetByteCount());
         }
         #endregion
     }

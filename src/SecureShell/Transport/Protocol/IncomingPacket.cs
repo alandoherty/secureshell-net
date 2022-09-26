@@ -13,7 +13,7 @@ namespace SecureShell.Transport.Protocol
     /// </summary>
     public struct IncomingPacket : IDisposable
     {
-        private ReadOnlySequence<byte> _payload;
+        private readonly ReadOnlySequence<byte> _payload;
         private SequencePosition _advanceTo;
 
         /// <summary>
@@ -58,7 +58,7 @@ namespace SecureShell.Transport.Protocol
         /// of a packet, you must still call <see cref="Advance"/> to move the reader forward.
         /// </summary>
         /// <returns>The memory packet.</returns>
-        public MemoryPacket ToMemoryPacket()
+        public readonly MemoryPacket ToMemoryPacket()
         {
             return new MemoryPacket(Header, Payload.ToArray().AsMemory());
         }
@@ -69,7 +69,7 @@ namespace SecureShell.Transport.Protocol
         /// </summary>
         /// <param name="buffer">The destination buffer.</param>
         /// <returns>The memory packet.</returns>
-        public MemoryPacket ToMemoryPacket(Memory<byte> buffer)
+        public readonly MemoryPacket ToMemoryPacket(Memory<byte> buffer)
         {
             if (buffer.Length < Payload.Length) {
                 throw new ArgumentOutOfRangeException(nameof(buffer), "The provided buffer is not large enough for the packet payload");

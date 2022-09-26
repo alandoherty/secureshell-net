@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using SecureShell.Security.Encryption;
 using SecureShell.Security.Hosts;
 using SecureShell.Security.Integrity;
 using SecureShell.Security.KeyExchange;
@@ -24,16 +25,17 @@ namespace SecureShell.Transport
     /// </summary>
     public class Peer
     {
-        private PeerMode _mode;
+        private readonly PeerMode _mode;
         private PeerState _state = PeerState.IdentificationExchange;
-        private PipeReader _reader;
-        private PipeWriter _writer;
-        private byte[] _headerBuffer = new byte[5];
+        private readonly PipeReader _reader;
+        private readonly PipeWriter _writer;
         private SshIdentification _localIdentification;
         private SshIdentification _remoteIdentification;
         private MacAlgorithm _localMac = MacAlgorithm.None;
+        private EncryptionAlgorithm _localEncryption = EncryptionAlgorithm.None;
         private MacAlgorithm _remoteMac = MacAlgorithm.None;
-        private SshOptions _options = SshOptions.DefaultInstance;
+        private EncryptionAlgorithm _remoteEncryption = EncryptionAlgorithm.None;
+        private readonly SshOptions _options = SshOptions.DefaultInstance;
         internal HostKey _hostKey; //TODO: not be internal
 
         private ExchangeContext _exchangeContext;
@@ -66,12 +68,17 @@ namespace SecureShell.Transport
         /// <returns></returns>
         public async ValueTask ExchangeKeysAsync()
         {
+            // the peer must be in version exchange to do this
+            if (_state != PeerState.KeyExchange) {
+                throw new InvalidOperationException("The peer must be in the key exchange state");
+            }
+            
             // encode and flush our message
             KeyInitializationMessage outKeyInitMsg = default;
             outKeyInitMsg.KeyExchangeAlgorithms = _options.KeyExchangeAlgorithms.Select(k => k.Name).ToList();
             outKeyInitMsg.ServerHostKeyAlgorithms = new List<string>() { "ssh-rsa" };
-            outKeyInitMsg.EncryptionAlgorithmsClientToServer = new List<string>() { "aes128-ctr" }; //TODO
-            outKeyInitMsg.EncryptionAlgorithmsServerToClient = new List<string>() { "aes128-ctr" }; //TODO
+            outKeyInitMsg.EncryptionAlgorithmsClientToServer = new List<string>() { "aes128-cbc" }; //TODO
+            outKeyInitMsg.EncryptionAlgorithmsServerToClient = new List<string>() { "aes128-cbc" }; //TODO
             outKeyInitMsg.MacAlgorithmsClientToServer = new List<string>() { "hmac-sha1" }; //TODO
             outKeyInitMsg.MacAlgorithmsServerToClient = new List<string>() { "hmac-sha1" }; //TODO
             outKeyInitMsg.CompressionAlgorithmsClientToServer = new List<string>() { "none" }; //TODO
@@ -128,7 +135,8 @@ namespace SecureShell.Transport
                     exchangeAlgo = new DiffieHellmanGroupExchangeAlgorithm();
 
                     //TODO: cancellation
-                    await exchangeAlgo.ExchangeAsync(this, _exchangeContext).ConfigureAwait(false);
+                    await exchangeAlgo.StartAsync(this, _exchangeContext).ConfigureAwait(false);
+                    
                     continue;
                 }
 
@@ -138,9 +146,43 @@ namespace SecureShell.Transport
                         throw new InvalidOperationException("The peer sent an exchange packet before key initialization");
                     }
 
-                    await exchangeAlgo.ProcessExchangeAsync(this, packet.Value).ConfigureAwait(false);
+                    // Process the exchange packet, if this completes the exchange we send our new keys and wait for our peers
+                    ExchangeOutput exchangeOutput = await exchangeAlgo.ProcessAsync(this, packet.Value).ConfigureAwait(false);
+                    
+                    if (exchangeOutput != null) {
+                        // Send new keys message
+                        GenericMessage newKeysMsg = new GenericMessage();
+                        newKeysMsg.Number = MessageNumber.NewKeys;
+                        
+                        await WritePacketAsync<GenericMessage, GenericMessage.Encoder>(newKeysMsg)
+                            .ConfigureAwait(false);
+                        
+                        // Wait for new keys message, or possibly a disconnect
+                        using (packet = await ReadPacketAsync().ConfigureAwait(false)) {
+                            if (packet == null) {
+                                throw new EndOfStreamException("The end of stream was reached before keys could be exchanged");
+                            }
+                            
+                            if (!packet.Value.TryGetMessageNumber(out num)) {
+                                throw new Exception("The peer sent an invalid message");
+                            }
 
-                    continue;
+                            if (num == MessageNumber.NewKeys) {
+                                var localAes = Aes.Create();
+                                localAes.Key = exchangeOutput.DeriveBytes(128 / 8, ExchangeKey.ClientToServer | ExchangeKey.EncryptionKey);
+                                _localEncryption = new SymmetricEncryptionAlgorithm(localAes, CipherMode.ECB);
+                                
+                                var remoteAes = Aes.Create();
+                                remoteAes.Key = exchangeOutput.DeriveBytes(128 / 8, ExchangeKey.ServerToClient | ExchangeKey.EncryptionKey);
+                                _remoteEncryption = new SymmetricEncryptionAlgorithm(remoteAes, CipherMode.ECB);
+                                
+                                _state = PeerState.Open;
+                                return;
+                            } else {
+                                throw new Exception("The peer sent an invalid key exchange response");
+                            }
+                        }
+                    }
                 }
             }
 
@@ -207,6 +249,7 @@ namespace SecureShell.Transport
                 throw new NotImplementedException();
             }
 
+            _state = PeerState.KeyExchange;
             return _remoteIdentification;
         }
 
@@ -379,6 +422,8 @@ namespace SecureShell.Transport
         /// <returns>The packet, SHOULD be advanced before reading next packet.</returns>
         public async ValueTask<IncomingPacket?> ReadPacketAsync(CancellationToken cancellationToken = default)
         {
+            //TODO: cancellation
+
             static (bool Done, IncomingPacket Packet, SequencePosition Examined) Process(Peer peer, ReadOnlySequence<byte> buffer)
             {
                 //TODO: handle encryption
@@ -411,13 +456,14 @@ namespace SecureShell.Transport
                     throw new NotImplementedException(); //TODO
 
                 ReadResult readResult = await _reader.ReadAsync().ConfigureAwait(false);
+                
                 var processResult = Process(this, readResult.Buffer);
-
+                
                 if (processResult.Done) {
                     // we do not need to advance here as IncomingPacket.Advance does it for us
                     return processResult.Packet;
                 }
-
+                
                 _reader.AdvanceTo(readResult.Buffer.Start, processResult.Examined);
 
                 // if completed we need to bubble up after processing
@@ -603,10 +649,10 @@ namespace SecureShell.Transport
 
             if (!File.Exists("hostkey")) {
                 rsa = RSA.Create(2048);
-                File.WriteAllBytes("hostkey", rsa.ExportPkcs8PrivateKey());
+                File.WriteAllBytes("hostkey", rsa.ExportRSAPrivateKey());
             } else {
                 rsa = RSA.Create();
-                rsa.ImportPkcs8PrivateKey(File.ReadAllBytes("hostkey").AsSpan(), out int _);
+                rsa.ImportRSAPrivateKey(File.ReadAllBytes("hostkey").AsSpan(), out int _);
             }
 
             _hostKey = new RsaHostKey(rsa);

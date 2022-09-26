@@ -57,12 +57,12 @@ namespace SecureShell.Transport.Messages
         }
 
         /// <inheritdoc/>
-        public IMessageDecoder<GenericMessage> CreateDecoder() => new Decoder();
+        public readonly IMessageDecoder<GenericMessage> CreateDecoder() => new Decoder();
 
         /// <inheritdoc/>
-        public IMessageEncoder<GenericMessage> CreateEncoder() => new Encoder();
+        public readonly IMessageEncoder<GenericMessage> CreateEncoder() => new Encoder();
 
         /// <inheritdoc/>
-        public uint GetByteCount() => Number.HasValue ? 0U : 1U;
+        public readonly uint GetByteCount() => Number.HasValue ? 1U : 0U;
     }
 }

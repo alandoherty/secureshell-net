@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -61,11 +62,14 @@ namespace SecureShell
             if (_connection == null)
                 throw new InvalidOperationException("The connection context is invalid");
 
-            // identification exchange
+            // Identification exchange
             await _connection.ExchangeIdentificationAsync(identification);
 
-            //TODO: exchange keys
+            // Exchange initial keys
             await _connection.ExchangeKeysAsync();
+
+            var packet = await _connection.ReadPacketAsync();
+            
             throw new NotImplementedException();
         }
 

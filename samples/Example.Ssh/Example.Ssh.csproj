@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\..\SSH.NET-develop\src\Renci.SshNet\Renci.SshNet.csproj" />
+    <ProjectReference Include="..\..\..\..\Documents\SSH.NET-develop\src\Renci.SshNet\Renci.SshNet.csproj" />
     <ProjectReference Include="..\..\src\SecureShell\SecureShell.csproj" />
   </ItemGroup>
 

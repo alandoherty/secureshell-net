@@ -217,7 +217,7 @@ namespace SecureShell.Transport.Messages
         }
 
         /// <inheritdoc/>
-        public uint GetByteCount()
+        public readonly uint GetByteCount()
         {
             static uint GetNamesByteCount(List<string> names)
             {
@@ -242,13 +242,13 @@ namespace SecureShell.Transport.Messages
         }
 
         /// <inheritdoc/>
-        public IMessageDecoder<KeyInitializationMessage> CreateDecoder()
+        public readonly IMessageDecoder<KeyInitializationMessage> CreateDecoder()
         {
             return new Decoder();
         }
         
         /// <inheritdoc/>
-        public IMessageEncoder<KeyInitializationMessage> CreateEncoder()
+        public readonly IMessageEncoder<KeyInitializationMessage> CreateEncoder()
         {
             return new Encoder();
         }

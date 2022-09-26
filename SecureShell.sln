@@ -15,7 +15,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Tests.Protocol", "tests\Tes
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Example.SshProxy", "samples\Example.SshProxy\Example.SshProxy.csproj", "{948004CA-686C-473B-BB60-06A1E5E9ADD5}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Renci.SshNet", "..\..\SSH.NET-develop\src\Renci.SshNet\Renci.SshNet.csproj", "{6622214E-3417-4EAD-9124-CABEC3111ACF}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Renci.SshNet", "..\..\Documents\SSH.NET-develop\src\Renci.SshNet\Renci.SshNet.csproj", "{6622214E-3417-4EAD-9124-CABEC3111ACF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
